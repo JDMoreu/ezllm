@@ -164,6 +164,41 @@ que unifica todo:
 Se eliminaron las vistas separadas de Modelos, Configurar y Perfiles para
 evitar la fragmentación.
 
+## Experiencia unificada (Despliegue)
+
+El usuario pidió que todo quede en un solo lugar: modelo base, mmproj, MTP,
+configuración del servidor, flags avanzados y presets, sin saltar entre
+secciones. Se consolidó todo en una única vista `Despliegue`:
+
+- **Modelos**: slots para principal, mmproj y MTP, cada uno con su botón
+  «Buscar» que abre el explorador nativo. Debajo, carpeta de escaneo y
+  catálogo con click-to-asign.
+- **Configuración**: contexto, lotes, GPU (checkboxes por tarjeta + reparto
+  multi-GPU), flash attention, caché K/V, multi-GPU, args extra.
+- **Avanzado** (colapsable): hilos, dirección, puerto, alias.
+- **Memoria en vivo**: estimación a la derecha, actualizada al cambiar
+  cualquier parámetro.
+- **Comando**: se muestra el comando exacto que se ejecutará, con botón
+  de copiar.
+- **Presets**: selector de preset en el encabezado + botón «Guardar como
+  preset». Un preset guarda modelo + mmproj + MTP + toda la configuración.
+  Se aplican de un clic. La lista de presets guardados aparece abajo.
+
+### Navegación final
+- Panel
+- llama.cpp (instalación de binarios)
+- Despliegue (unificado)
+- Ajustes
+
+Se eliminaron las vistas separadas de Modelos, Configurar y Perfiles para
+evitar la fragmentación.
+
+### Correcciones técnicas
+- El frontend ahora usa los comandos reales del backend (`list_deployments`,
+  `save_deployment`, `apply_deployment`, `delete_deployment`) en lugar de
+  los inexistentes `list_profiles`/`save_profile`.
+- Se eliminó el interfaz `Deployment` duplicado en `types.ts`.
+
 ## Prueba de regresión de la UI
 
 El asset recomendado (Vulkan) quedaba al final de la lista: había que hacer
