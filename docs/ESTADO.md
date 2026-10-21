@@ -199,6 +199,67 @@ evitar la fragmentación.
   los inexistentes `list_profiles`/`save_profile`.
 - Se eliminó el interfaz `Deployment` duplicado en `types.ts`.
 
+## Rediseño de la experiencia (2026-10-21)
+
+### Lo que complained el usuario y como quedo
+1. "Arrancar" x3 -> ahora solo en la barra lateral, disponible desde
+   cualquier seccion.
+2. Panel con "Puesta en marcha" + tips duplicados -> una sola fuente; los
+   recursos son telemetria real.
+3. Medidores estaticos -> backend de telemetria en Rust + sondeo a 1 Hz +
+   sparklines.
+4. Despliegue sin hilo visual -> secciones por dominio, sin numeracion.
+5. "Carpeta de modelos" redundante -> boton dentro del bloque Modelo, con
+   el catalogo debajo.
+6. "Estable" vacio -> corregido (ver abajo).
+
+### Correccion de la seccion llama.cpp (bug real, verificado)
+
+`list_stable_releases` pedia `per_page=30` y filtra por estables. El feed de
+GitHub lo saturan las nightlies (`b#####`, ~6 al dia) frente a las estables
+(`vX.Y.Z`, ~1 cada varias semanas). Medido:
+
+    per_page=12  -> 0 estables en la ventana
+    per_page=30  -> 0 estables en la ventana
+    pagina 1 de 100 -> v0.7.0
+    pagina 3 de 100 -> v0.6.0
+
+Por eso "Estable" no mostraba nada. Ahora pagina hasta reunir las pedidas
+(10 paginas x 100 = 1000 releases) y resuelve el puntero `nightly-tag.txt`
+para traer los assets REALES de la nightly equivalente: v0.7.0 -> b11669,
+que tiene los 14 paquetes de Windows. Una version estable ya se instala desde
+la propia pestana.
+
+### Documentacion de llama.cpp verificada (2026-10-21)
+
+- Las releases estables NO publican binarios: publican `nightly-tag.txt` con
+  el tag `b#####` equivalente. Es el puente estable -> binario.
+- Nombres reales de assets Windows:
+  `llama-<TAG>-bin-win-vulkan-x64.zip`, `-cpu-`, `-cuda-12.4-`, `-cuda-13.4-`,
+  `-rocm-10.0-`, `-sycl-`, `-openvino-2026.4.1-`.
+- Los assets `cudart-*` son el runtime de CUDA, NO binarios de llama.cpp:
+  nunca deben ganar la recomendacion (ya hay test de regresion).
+- `--mmap`, `--mlock` y `--no-mmap` YA NO EXISTEN: se usa `--load-mode`.
+- `--fit on|off` existe: ajusta los argumentos NO fijados por el usuario para
+  que quepan en la VRAM. ABORTA si el usuario ya fijo `-ngl` o
+  `--tensor-split` a mano. La app no debe activar `--fit` junto con esos.
+- El README del server esta en `tools/server/README.md` (movido desde
+  `examples/server/`).
+
+### Sistema visual
+
+El acento pasa de verde a azul-violeta (hue 232). Motivo: el verde estaba
+colisionando con "sano"/"ok", que es un estado del sistema, no la marca. Un
+color, un significado. Todos los pares texto/fondo pasan WCAG AA medido
+(>= 4.5:1); el unico token que no llega es `ink-500`, reservado a 14px+ o a
+elementos decorativos.
+
+El minimo tipografico sube de 11px a 12px. Los 11px en el diseño anterior
+leian "informal" porque comprimian el rango util de la escala.
+
+Se eliminan `ConfigureView.tsx`, `ModelsView.tsx` y `DeviceField.tsx`: 1757
+lineas que nadie importaba, con dos componentes duplicados.
+
 ## Prueba de regresión de la UI
 
 El asset recomendado (Vulkan) quedaba al final de la lista: había que hacer
