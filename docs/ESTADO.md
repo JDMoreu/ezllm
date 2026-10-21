@@ -226,3 +226,18 @@ no los modelos.
 
 **EzLlamaCpp no depende de nada de eso**: toda la lógica (fórmula de memoria,
 clasificación de assets, detección de hardware, flags) ya está portada a Rust.
+
+## Instaladores (release)
+
+```
+src-tauri/target/release/bundle/msi/EzLlamaCpp_0.1.0_x64_en-US.msi   (4,12 MiB)
+  sha256 75c14a2b2269bc1ed65d3f072a70eff9709c5d2a6d8722eaf858dc5fdf84dfdf
+
+src-tauri/target/release/bundle/nsis/EzLlamaCpp_0.1.0_x64-setup.exe  (2,96 MiB)
+  sha256 2323c6bd5a6c9b44da50de7afb7a4a387a42919dbd51af16a366ae9f9e6926aa
+```
+
+El binario release se ejecutó y se verificó con captura: detecta las dos GPUs,
+el nombre del processor sale limpio y la sección Perfiles está presente.
+
+Para reconstruir: `npm run tauri build` (tarda ~4 min).
