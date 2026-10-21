@@ -269,14 +269,3 @@ export interface StableRelease {
   htmlUrl: string;
 }
 
-/** Un perfil guardado: un modelo con su configuración y sus banderas. */
-export interface Deployment {
-  id: string;
-  name: string;
-  modelPath: string | null;
-  mmprojPath: string | null;
-  draftPath: string | null;
-  server: ServerConfig;
-  notes: string;
-  createdAt: number;
-}

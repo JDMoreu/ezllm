@@ -16,7 +16,7 @@ import { basename, formatBytes, formatElapsed, formatNumber } from "../lib/forma
 import { api } from "../lib/api";
 import type { Deployment, HardwareReport, ServerStatus } from "../types";
 
-type NavTarget = "dashboard" | "releases" | "models" | "configure" | "settings";
+type NavTarget = "dashboard" | "deploy" | "releases" | "settings";
 
 export default function DashboardView({
   hardware,
@@ -76,18 +76,11 @@ export default function DashboardView({
       cta: "Ver versiones",
     },
     {
-      id: "models",
-      title: "Elige un modelo",
-      description: "Escanea tu carpeta y selecciona el GGUF principal.",
+      id: "deploy",
+      title: "Elige y configura tu modelo",
+      description: "Modelo, mmproj, MTP, configuración y presets en un solo lugar.",
       done: !!selectedModel,
-      cta: "Abrir modelos",
-    },
-    {
-      id: "configure",
-      title: "Ajusta el servidor",
-      description: "Contexto, GPU y caché. Comprueba la memoria en vivo.",
-      done: false,
-      cta: "Configurar",
+      cta: "Abrir despliegue",
     },
   ];
 
@@ -317,7 +310,7 @@ export default function DashboardView({
           icon={<Layers size={15} />}
           title="Buscar modelos"
           description="Explora tu carpeta y detecta MTP y mmproj."
-          onClick={() => onNavigate("models")}
+          onClick={() => onNavigate("deploy")}
         />
         <Shortcut
           icon={<Settings2 size={15} />}

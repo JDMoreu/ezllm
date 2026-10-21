@@ -89,15 +89,6 @@ export const api = {
   duplicateDeployment: (id: string, newName: string) =>
     invoke<Deployment>("duplicate_deployment", { id, newName }),
 
-  // --- Perfiles -----------------------------------------------------------
-  listProfiles: () => invoke<Deployment[]>("list_profiles"),
-  saveProfile: (profile: Deployment) => invoke<Deployment>("save_profile", { profile }),
-  deleteProfile: (id: string) => invoke<string>("delete_profile", { id }),
-  applyProfile: (id: string) =>
-    invoke<[AppConfig, Deployment]>("apply_profile", { id }),
-  duplicateProfile: (id: string, newName: string) =>
-    invoke<Deployment>("duplicate_profile", { id, newName }),
-
   // --- Utilidades --------------------------------------------------------
   llamaServerPath: () => invoke<string | null>("llama_server_path"),
   listBinaries: (dir: string) => invoke<string[]>("list_binaries", { dir }),

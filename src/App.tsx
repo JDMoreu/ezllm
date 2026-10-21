@@ -16,8 +16,7 @@ type ViewId = "dashboard" | "deploy" | "releases" | "settings";
 const NAV: { id: ViewId; label: string; icon: typeof Activity; hint: string }[] = [
   { id: "dashboard", label: "Panel", icon: Activity, hint: "Estado del equipo y del servidor" },
   { id: "releases", label: "llama.cpp", icon: Download, hint: "Instalar binarios oficiales" },
-  { id: "deploy", label: "Despliegue", icon: Layers, hint: "Modelo + configuración en un solo lugar" },
-  { id: "releases", label: "llama.cpp", icon: Download, hint: "Instalar binarios oficiales" },
+  { id: "deploy", label: "Despliegue", icon: Layers, hint: "Modelo + configuración + presets" },
   { id: "settings", label: "Ajustes", icon: Cpu, hint: "Rutas, token y equipo" },
 ];
 
