@@ -35,6 +35,7 @@ import type {
   DownloadProgress,
   InstalledBuild,
   ReleaseView,
+  StableRelease,
 } from "../types";
 
 export default function ReleasesView({
@@ -53,6 +54,9 @@ export default function ReleasesView({
   const [progress, setProgress] = useState<DownloadProgress | null>(null);
   const [installing, setInstalling] = useState<string | null>(null);
   const [pendingDelete, setPendingDelete] = useState<string | null>(null);
+  const [channel, setChannel] = useState<"nightly" | "stable">("nightly");
+  const [stable, setStable] = useState<StableRelease[]>([]);
+  const [stableTag, setStableTag] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -73,6 +77,26 @@ export default function ReleasesView({
   useEffect(() => {
     void load();
   }, [load]);
+
+  // Las releases estables se piden aparte: cada una necesita descargar su
+  // nightly-tag.txt para saber que tag trae los binarios.
+  useEffect(() => {
+    if (channel !== "stable") return;
+    let alive = true;
+    api
+      .listStableReleases(12)
+      .then((s) => {
+        if (!alive) return;
+        setStable(s);
+        setStableTag((prev) => prev ?? s[0]?.nightlyTag ?? null);
+      })
+      .catch(() => {
+        if (alive) setStable([]);
+      });
+    return () => {
+      alive = false;
+    };
+  }, [channel]);
 
   useEffect(() => onInstallProgress(setProgress), []);
 
@@ -145,9 +169,32 @@ export default function ReleasesView({
             verifica con el hash SHA-256 que publica GitHub antes de instalarse.
           </p>
         </div>
-        <Button icon={<RefreshCw size={14} />} onClick={load} loading={loading}>
-          Actualizar
-        </Button>
+        <div className="flex items-center gap-2">
+          <div className="flex gap-1 rounded-lg bg-base-850 p-0.5">
+            {(
+              [
+                ["nightly", "Nightly"],
+                ["stable", "Estables"],
+              ] as const
+            ).map(([id, label]) => (
+              <button
+                key={id}
+                onClick={() => setChannel(id)}
+                className={clsx(
+                  "cursor-pointer rounded-md px-2.5 py-1 text-[0.6875rem] font-medium transition-colors duration-200",
+                  channel === id
+                    ? "bg-base-700 text-ink-100"
+                    : "text-ink-400 hover:text-ink-200",
+                )}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+          <Button icon={<RefreshCw size={14} />} onClick={load} loading={loading}>
+            Actualizar
+          </Button>
+        </div>
       </header>
 
       {error && (
@@ -266,8 +313,74 @@ export default function ReleasesView({
         </Card>
       )}
 
-      {/* --- Releases --- */}
-      <div className="space-y-2.5">
+      {/* --- Releases estables --- */}
+      {channel === "stable" && (
+        <div className="space-y-2.5">
+          {stable.length === 0 && (
+            <Card>
+              <p className="py-6 text-center text-xs text-ink-400">
+                Consultando las releases estables…
+              </p>
+            </Card>
+          )}
+          {stable.map((s) => (
+            <section
+              key={s.tag}
+              className={clsx(
+                "card overflow-hidden transition-colors duration-200",
+                s.nightlyTag === stableTag && "border-accent-500/45",
+              )}
+            >
+              <button
+                onClick={() => setStableTag(s.nightlyTag)}
+                className="flex w-full cursor-pointer items-center gap-3 px-4 py-3 text-left transition-colors duration-200 hover:bg-base-850"
+                aria-pressed={s.nightlyTag === stableTag}
+              >
+                <span
+                  className={clsx(
+                    "flex h-5 w-5 shrink-0 items-center justify-center rounded-full border",
+                    s.nightlyTag === stableTag
+                      ? "border-accent-500 bg-accent-500"
+                      : "border-base-600",
+                  )}
+                >
+                  {s.nightlyTag === stableTag && (
+                    <svg width="10" height="10" viewBox="0 0 24 24" fill="none">
+                      <path
+                        d="m5 13 4 4L19 7"
+                        stroke="#04150e"
+                        strokeWidth="3.5"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      />
+                    </svg>
+                  )}
+                </span>
+                <div className="min-w-0 flex-1">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="mono text-[0.8125rem] font-semibold text-ink-100">
+                      {s.tag}
+                    </span>
+                    <span className="chip chip-accent">Estable</span>
+                    {s.nightlyTag && (
+                      <span className="mono chip" title="Tag con los binarios">
+                        {s.nightlyTag}
+                      </span>
+                    )}
+                  </div>
+                  <p className="mt-0.5 text-[0.6875rem] text-ink-500">
+                    {formatDate(s.publishedAt)} · las releases estables no
+                    publican binarios: se instala el build {s.nightlyTag ?? "nightly"}
+                  </p>
+                </div>
+              </button>
+            </section>
+          ))}
+        </div>
+      )}
+
+      {/* --- Releases nightly --- */}
+      <div className={clsx("space-y-2.5", channel === "stable" && "hidden")}>
         {loading && releases.length === 0 && (
           <Card>
             <div className="flex items-center gap-3 py-6 text-xs text-ink-400">

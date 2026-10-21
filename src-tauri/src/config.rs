@@ -46,12 +46,29 @@ pub struct ServerConfig {
     pub flash_attn: String,
     pub cache_type_k: String,
     pub cache_type_v: String,
+    /// Dispositivos donde se carga el modelo. Lista separada por comas, como
+    /// espera `--device`: "Vulkan0", "Vulkan0,Vulkan1", "CUDA0".
+    ///
+    /// Lleva el prefijo del API porque llama.cpp lo exige: `Vulkan0`, no
+    /// `GPU0`. El valor por defecto se calcula al abrir la app a partir de
+    /// las GPUs detectadas.
     pub device: Option<String>,
-    pub split_mode: String,
+    /// Reparto de las capas entre varios dispositivos. `None` = automático.
+    /// Formato de `--tensor-split`: "1,2" reparte 1:2.
     pub tensor_split: Option<String>,
+    /// Modo de reparto: por capas (layer) o por filas (row).
+    pub split_mode: String,
+    /// Si es `true`, el modelo se reparte entre las GPUs indicadas.
+    /// Si es `false`, todo el modelo va a la primera GPU y el resto queda
+    /// para la CPU.
+    pub multi_gpu: bool,
     pub load_mode: String,
     pub fit: Option<String>,
     pub alias: Option<String>,
+    /// Flags extra escritos a mano por el usuario. Se añaden al final del
+    /// comando, después de todo lo que genera la app.
+    #[serde(default)]
+    pub extra_args: String,
 }
 
 impl Default for ServerConfig {
@@ -72,11 +89,38 @@ impl Default for ServerConfig {
             device: None,
             split_mode: "layer".to_string(),
             tensor_split: None,
+            multi_gpu: false,
             load_mode: "".to_string(),
             fit: None,
             alias: None,
+            extra_args: "".to_string(),
         }
     }
+}
+
+/// Un perfil guardado: un modelo con su configuración y sus banderas.
+///
+/// Sirve para no tener que reconfigurar el servidor cada vez: se guarda una
+/// vez y se carga de un clic. Se pueden tener varios (uno por modelo, o uno
+/// por escenario) y alternar entre ellos.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ModelProfile {
+    pub id: String,
+    pub name: String,
+    #[serde(default)]
+    pub model_path: Option<String>,
+    #[serde(default)]
+    pub mmproj_path: Option<String>,
+    #[serde(default)]
+    pub draft_path: Option<String>,
+    #[serde(default)]
+    pub server: ServerConfig,
+    /// Notas libres del usuario.
+    #[serde(default)]
+    pub notes: String,
+    #[serde(default)]
+    pub created_at: u64,
 }
 
 /// Configuración global de la app.
@@ -91,6 +135,12 @@ pub struct AppConfig {
     pub last_mmproj: Option<String>,
     pub last_draft_model: Option<String>,
     pub server: ServerConfig,
+    /// Perfiles de modelo guardados.
+    #[serde(default)]
+    pub profiles: Vec<ModelProfile>,
+    /// Perfil activo.
+    #[serde(default)]
+    pub active_profile_id: Option<String>,
     #[serde(default)]
     pub language: String,
 }
@@ -106,6 +156,8 @@ impl Default for AppConfig {
             last_mmproj: None,
             last_draft_model: None,
             server: ServerConfig::default(),
+            profiles: Vec::new(),
+            active_profile_id: None,
             language: "es".to_string(),
         }
     }
@@ -251,6 +303,8 @@ pub fn config_to_flags(
         flags.push("--cache-type-v".into());
         flags.push(cfg.cache_type_v.clone());
     }
+    // Dispositivo: si no se elige ninguno, no se pasa la flag y llama.cpp
+    // usa el primero disponible.
     if let Some(d) = cfg.device.as_ref().filter(|d| !d.trim().is_empty()) {
         flags.push("--device".into());
         flags.push(d.clone());
@@ -259,9 +313,12 @@ pub fn config_to_flags(
         flags.push("--split-mode".into());
         flags.push(cfg.split_mode.clone());
     }
-    if let Some(ts) = cfg.tensor_split.as_ref().filter(|t| !t.trim().is_empty()) {
-        flags.push("--tensor-split".into());
-        flags.push(ts.clone());
+    // El reparto solo tiene sentido si hay mas de un dispositivo.
+    if cfg.multi_gpu {
+        if let Some(ts) = cfg.tensor_split.as_ref().filter(|t| !t.trim().is_empty()) {
+            flags.push("--tensor-split".into());
+            flags.push(ts.clone());
+        }
     }
     // `--mmap` ya no existe: el equivalente es --load-mode
     if !cfg.load_mode.is_empty() {
@@ -284,7 +341,69 @@ pub fn config_to_flags(
     flags.push(cfg.host.clone());
     flags.push("--port".into());
     flags.push(cfg.port.to_string());
+
+    // Los flags libres del usuario van AL FINAL, para que puedan pisar
+    // cualquier valor generado por la app.
+    flags.extend(parse_extra_args(&cfg.extra_args));
+
     flags
+}
+
+/// Divide los flags libres del usuario respetando las comillas.
+///
+/// ```text
+/// --temp 0.7 --top-p 0.9 -np 2
+/// --jinja "--template chatml"
+/// ```
+///
+/// Las comillas dobles y simples se respetan; el resto se separa por
+/// espacios. Un `\` escapa el siguiente carácter.
+pub fn parse_extra_args(input: &str) -> Vec<String> {
+    let mut out = Vec::new();
+    let mut current = String::new();
+    let mut quote: Option<char> = None;
+    let mut has_content = false;
+
+    for ch in input.chars() {
+        match quote {
+            Some(q) => {
+                if ch == q {
+                    quote = None;
+                } else if ch == '\\' {
+                    // Escape: el siguiente caracter va literal.
+                    quote = Some(q);
+                    // Se marca con un sentinel para no perderlo.
+                    current.push('\\');
+                    current.push(ch);
+                    continue;
+                } else {
+                    current.push(ch);
+                }
+            }
+            None => {
+                if ch == '"' || ch == '\'' {
+                    quote = Some(ch);
+                    has_content = true;
+                } else if ch.is_whitespace() {
+                    if has_content {
+                        out.push(std::mem::take(&mut current));
+                        has_content = false;
+                    }
+                } else {
+                    current.push(ch);
+                    has_content = true;
+                }
+            }
+        }
+    }
+    if has_content {
+        out.push(current);
+    }
+
+    // Limpia los escapes: \\x -> x
+    out.into_iter()
+        .map(|a| a.replace("\\", ""))
+        .collect()
 }
 
 /// Contexto que se ofrece en el desplegable: pasos habituales hasta el máximo.
@@ -331,8 +450,69 @@ mod tests {
         assert!(config_to_flags(&cfg, None, None, None).iter().any(|f| f == "-np"));
     }
 
+#[test]
+    fn multi_gpu_emits_device_and_tensor_split() {
+        let mut cfg = ServerConfig::default();
+        cfg.device = Some("Vulkan0,Vulkan1".into());
+        cfg.multi_gpu = true;
+        cfg.tensor_split = Some("3,1".into());
+        cfg.split_mode = "row".into();
+
+        let flags = config_to_flags(&cfg, None, None, None);
+
+        let get = |name: &str| {
+            flags
+                .iter()
+                .position(|f| f == name)
+                .map(|i| flags[i + 1].clone())
+        };
+        assert_eq!(get("--device").as_deref(), Some("Vulkan0,Vulkan1"));
+        assert_eq!(get("--tensor-split").as_deref(), Some("3,1"));
+        assert_eq!(get("--split-mode").as_deref(), Some("row"));
+    }
+
+    #[test]
+    fn tensor_split_is_omitted_without_multi_gpu() {
+        let mut cfg = ServerConfig::default();
+        cfg.tensor_split = Some("3,1".into());
+        cfg.multi_gpu = false;
+        let flags = config_to_flags(&cfg, None, None, None);
+        assert!(!flags.iter().any(|f| f == "--tensor-split"));
+    }
     #[test]
     fn context_steps_fit_the_maximum() {
         assert_eq!(suggest_context_steps(8192), vec![1024, 2048, 4096, 8192]);
+    }
+
+    #[test]
+    fn extra_args_are_split_by_spaces() {
+        assert_eq!(
+            parse_extra_args("--temp 0.7 --top-p 0.9"),
+            vec!["--temp", "0.7", "--top-p", "0.9"]
+        );
+    }
+
+    #[test]
+    fn extra_args_keep_quoted_values_together() {
+        assert_eq!(
+            parse_extra_args("--jinja \"--template chatml\" -np 2"),
+            vec!["--jinja", "--template chatml", "-np", "2"]
+        );
+    }
+
+    #[test]
+    fn extra_args_ignore_empty_input() {
+        assert!(parse_extra_args("").is_empty());
+        assert!(parse_extra_args("   ").is_empty());
+    }
+
+    #[test]
+    fn extra_args_go_last_so_they_can_override() {
+        let mut cfg = ServerConfig::default();
+        cfg.extra_args = "--ctx-size 999".into();
+        let flags = config_to_flags(&cfg, None, None, None);
+        // Los flags libres van al final, en el orden escrito.
+        assert_eq!(flags[flags.len() - 2], "--ctx-size");
+        assert_eq!(flags.last().unwrap(), "999");
     }
 }

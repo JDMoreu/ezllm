@@ -22,9 +22,23 @@ export interface ServerConfig {
   device: string | null;
   splitMode: string;
   tensorSplit: string | null;
+  multiGpu: boolean;
   loadMode: string;
   fit: string | null;
   alias: string | null;
+  extraArgs: string;
+}
+
+/** Un perfil guardado: un modelo con su configuración y sus banderas. */
+export interface ModelProfile {
+  id: string;
+  name: string;
+  modelPath: string | null;
+  mmprojPath: string | null;
+  draftPath: string | null;
+  server: ServerConfig;
+  notes: string;
+  createdAt: number;
 }
 
 export interface AppConfig {
@@ -36,6 +50,8 @@ export interface AppConfig {
   lastMmproj: string | null;
   lastDraftModel: string | null;
   server: ServerConfig;
+  profiles: ModelProfile[];
+  activeProfileId: string | null;
   language: string;
 }
 
@@ -240,4 +256,12 @@ export interface Bootstrap {
   config: AppConfig;
   installed: InstalledBuild[];
   defaults: { modelsDir: string; llamaDir: string };
+}
+
+/** Una release estable y el tag nightly que trae los binarios. */
+export interface StableRelease {
+  tag: string;
+  nightlyTag: string | null;
+  publishedAt: string | null;
+  htmlUrl: string;
 }

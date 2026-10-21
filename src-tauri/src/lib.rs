@@ -152,6 +152,46 @@ async fn resolve_stable_tag(
     releases::resolve_stable_to_nightly(&state.client, token.as_deref(), &stable_tag).await
 }
 
+/// Lista las releases ESTABLES (`vX.Y.Z`) con el tag nightly que trae los
+/// binarios. Sirve para instalar una version estable en vez de la ultima
+/// nightly.
+#[tauri::command]
+async fn list_stable_releases(
+    state: State<'_, AppState>,
+    per_page: Option<u32>,
+) -> CmdResult<Vec<StableRelease>> {
+    let token = state.config.lock().await.github_token.clone();
+    let mut all = releases::list_releases(&state.client, token.as_deref(), per_page.unwrap_or(30)).await?;
+    all.retain(|r| !r.prerelease && r.tag_name.starts_with('v'));
+
+    let mut out = Vec::new();
+    for r in all {
+        let nightly = releases::resolve_stable_to_nightly(
+            &state.client,
+            token.as_deref(),
+            &r.tag_name,
+        )
+        .await
+        .ok();
+        out.push(StableRelease {
+            tag: r.tag_name.clone(),
+            nightly_tag: nightly,
+            published_at: r.published_at.clone(),
+            html_url: r.html_url.clone(),
+        });
+    }
+    Ok(out)
+}
+
+/// Una release estable y el tag nightly que trae los binarios.
+#[derive(Debug, Clone, Serialize)]
+pub struct StableRelease {
+    pub tag: String,
+    pub nightly_tag: Option<String>,
+    pub published_at: Option<String>,
+    pub html_url: String,
+}
+
 /// Detalle de una release concreta.
 #[tauri::command]
 async fn get_release(state: State<'_, AppState>, tag: String) -> CmdResult<ReleaseView> {
@@ -402,7 +442,97 @@ fn context_steps(ctx_max: u32) -> Vec<u32> {
     config::suggest_context_steps(ctx_max as u64)
 }
 
+// --- Perfiles de modelo -----------------------------------------------------
+
+/// Lista los perfiles guardados.
+#[tauri::command]
+async fn list_profiles(state: State<'_, AppState>) -> CmdResult<Vec<config::ModelProfile>> {
+    Ok(state.config.lock().await.profiles.clone())
+}
+
+/// Guarda un perfil (nuevo o actualizado por su id).
+#[tauri::command]
+async fn save_profile(
+    state: State<'_, AppState>,
+    profile: config::ModelProfile,
+) -> CmdResult<config::ModelProfile> {
+    let mut cfg = state.config.lock().await;
+    let mut profile = profile;
+    if profile.id.is_empty() {
+        profile.id = format!("p{}", now_millis());
+    }
+    if profile.created_at == 0 {
+        profile.created_at = now_millis();
+    }
+    match cfg.profiles.iter().position(|p| p.id == profile.id) {
+        Some(i) => cfg.profiles[i] = profile.clone(),
+        None => cfg.profiles.push(profile.clone()),
+    }
+    config::save(&cfg)?;
+    Ok(profile)
+}
+
+/// Elimina un perfil.
+#[tauri::command]
+async fn delete_profile(state: State<'_, AppState>, id: String) -> CmdResult<String> {
+    let mut cfg = state.config.lock().await;
+    cfg.profiles.retain(|p| p.id != id);
+    if cfg.active_profile_id.as_deref() == Some(id.as_str()) {
+        cfg.active_profile_id = None;
+    }
+    config::save(&cfg)?;
+    Ok(format!("Perfil eliminado"))
+}
+
+/// Aplica un perfil: su configuración pasa a ser la configuración activa y
+/// sus modelos quedan seleccionados.
+#[tauri::command]
+async fn apply_profile(
+    state: State<'_, AppState>,
+    id: String,
+) -> CmdResult<(AppConfig, config::ModelProfile)> {
+    let mut cfg = state.config.lock().await;
+    let Some(profile) = cfg.profiles.iter().find(|p| p.id == id).cloned() else {
+        return Err(format!("No existe el perfil {id}"));
+    };
+    cfg.server = profile.server.clone();
+    cfg.last_model = profile.model_path.clone();
+    cfg.last_mmproj = profile.mmproj_path.clone();
+    cfg.last_draft_model = profile.draft_path.clone();
+    cfg.active_profile_id = Some(profile.id.clone());
+    config::save(&cfg)?;
+    Ok((cfg.clone(), profile))
+}
+
+/// Duplica un perfil para poder variants sin perder el original.
+#[tauri::command]
+async fn duplicate_profile(
+    state: State<'_, AppState>,
+    id: String,
+    new_name: String,
+) -> CmdResult<config::ModelProfile> {
+    let mut cfg = state.config.lock().await;
+    let Some(source) = cfg.profiles.iter().find(|p| p.id == id).cloned() else {
+        return Err(format!("No existe el perfil {id}"));
+    };
+    let mut copy = source;
+    copy.id = format!("p{}", now_millis());
+    copy.name = new_name;
+    copy.created_at = now_millis();
+    cfg.profiles.push(copy.clone());
+    config::save(&cfg)?;
+    Ok(copy)
+}
+
 // --- Utilidades -------------------------------------------------------------
+
+/// Milisegundos desde epoch (para generar ids únicos).
+fn now_millis() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as u64)
+        .unwrap_or(0)
+}
 
 /// Ruta del `llama-server` que se usaría ahora mismo.
 #[tauri::command]
@@ -523,6 +653,7 @@ pub fn run() {
             list_releases,
             get_release,
             resolve_stable_tag,
+            list_stable_releases,
             install_release,
             list_installed,
             remove_install,
@@ -541,6 +672,11 @@ pub fn run() {
             list_binaries,
             open_folder,
             bootstrap,
+            list_profiles,
+            save_profile,
+            delete_profile,
+            apply_profile,
+            duplicate_profile,
         ])
         .run(tauri::generate_context!())
         .expect("error al iniciar EzLlamaCpp");

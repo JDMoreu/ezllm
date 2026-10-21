@@ -65,3 +65,15 @@ pub fn recommend_for_host(host_os: &str, host_arch: &str) -> String {
     }
     out
 }
+
+/// Imprime los flags que la app generaria con la configuracion guardada.
+pub fn flags_from_saved_config() -> String {
+    let cfg = crate::config::load();
+    let flags = crate::config::config_to_flags(
+        &cfg.server,
+        cfg.last_model.as_deref(),
+        cfg.last_mmproj.as_deref(),
+        cfg.last_draft_model.as_deref(),
+    );
+    flags.join(" ")
+}

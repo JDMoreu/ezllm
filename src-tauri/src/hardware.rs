@@ -179,6 +179,26 @@ pub fn detect_gpus(llama_server: Option<&str>) -> Vec<GpuDevice> {
         }
     }
 
+    // `llama-server --list-devices` solo lista los dispositivos que USA el
+    // backend. Si la GPU integrada no aparece (porque no se ha puesto en el
+    // device list), se recupera de vulkaninfo para no ocultarla.
+    for (name, kind) in &types {
+        let known = devices
+            .iter()
+            .any(|d| d.name.trim().to_ascii_lowercase() == *name);
+        if !known {
+            devices.push(GpuDevice {
+                name: name.clone(),
+                api: "vulkan".to_string(),
+                index: devices.len() as u32,
+                kind: kind.clone(),
+                vram_total_mib: 0,
+                vram_free_mib: 0,
+                source: "vulkaninfo".to_string(),
+            });
+        }
+    }
+
     if !devices.is_empty() {
         return devices;
     }
@@ -301,7 +321,12 @@ fn cpu_model() -> Option<String> {
         if status != 0 {
             return None;
         }
-        let text = String::from_utf8_lossy(&buf);
+        // `RegQueryValueExA` devuelve ANSI (UTF-8 en Windows 10+), NO UTF-16.
+        // Hay que recortar EXACTAMENTE los bytes que dice `size`: el buffer
+        // viene cero inicializado, pero si se lee de mas aparecen bytes
+        // nulos que la decodificacion convierte en caracteres de reemplazo.
+        let len = (size as usize).min(buf.len());
+        let text = String::from_utf8_lossy(&buf[..len]);
         let text = text.trim_end_matches('\0').trim();
         if text.is_empty() {
             None
@@ -462,6 +487,22 @@ GPU1:
         assert_eq!(types[0].1, "discrete");
         assert_eq!(types[1].0, "amd radeon(tm) graphics");
         assert_eq!(types[1].1, "integrated");
+    }
+#[test]
+    fn cpu_name_has_no_replacement_characters() {
+        // El nombre real del registro de este equipo, tal cual lo devuelve
+        // RegQueryValueExA: ANSI con relleno de espacios y un null final.
+        let mut buf = vec![0u8; 512];
+        let raw = b"AMD Ryzen 5 5500GT with Radeon Graphics        \0";
+        buf[..raw.len()].copy_from_slice(raw);
+        let size = raw.len() as u32;
+
+        let len = (size as usize).min(buf.len());
+        let text = String::from_utf8_lossy(&buf[..len]);
+        let text = text.trim_end_matches('\0').trim();
+
+        assert_eq!(text, "AMD Ryzen 5 5500GT with Radeon Graphics");
+        assert!(!text.contains('\u{fffd}'), "hay caracteres de reemplazo");
     }
     #[test]
     fn ram_is_detected() {

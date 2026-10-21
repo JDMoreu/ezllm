@@ -16,13 +16,21 @@ import {
   Alert,
   Button,
   Card,
+  Field,
   Meter,
   NumberField,
   SelectField,
   useToast,
 } from "../components/ui";
 import { basename, formatGb } from "../lib/format";
-import type { AppConfig, MemoryEstimate, ServerConfig, ServerStatus } from "../types";
+import type {
+  AppConfig,
+  GpuDevice,
+  HardwareReport,
+  MemoryEstimate,
+  ServerConfig,
+  ServerStatus,
+} from "../types";
 
 const CACHE_TYPES = [
   { value: "f16", label: "F16 (por defecto)" },
@@ -33,6 +41,11 @@ const CACHE_TYPES = [
   { value: "q4_0", label: "Q4_0" },
   { value: "iq4_nl", label: "IQ4_NL" },
   { value: "f32", label: "F32 (máxima calidad)" },
+];
+
+const SPLIT_MODES = [
+  { value: "layer", label: "Por capas" },
+  { value: "row", label: "Por filas" },
 ];
 
 const FLASH_OPTIONS = [
@@ -50,6 +63,7 @@ const LOAD_MODES = [
 export default function ConfigureView({
   config,
   server,
+  hardware,
   selectedModel,
   selectedMmproj,
   selectedDraft,
@@ -60,6 +74,7 @@ export default function ConfigureView({
 }: {
   config: AppConfig | null;
   server: ServerStatus | null;
+  hardware: HardwareReport | null;
   selectedModel: string | null;
   selectedMmproj: string | null;
   selectedDraft: string | null;
@@ -140,6 +155,9 @@ export default function ConfigureView({
   }, [server?.running, server?.startedAt]);
 
   const ctxSteps = useMemo(() => [1024, 2048, 4096, 8192, 16384, 32768, 65536, 131072, 262144], []);
+
+  // Las GPUs detectadas, para poder elegir en cual se carga el modelo.
+  const gpus = hardware?.gpu ?? [];
 
   if (!config || !sc) {
     return (
@@ -230,8 +248,16 @@ export default function ConfigureView({
           </Card>
 
           {/* --- GPU --- */}
-          <Card title="GPU" subtitle="Reparto entre la tarjeta y el procesador.">
+          <Card
+            title="GPU"
+            subtitle="En qué tarjeta se carga el modelo y cómo se reparte."
+          >
             <div className="grid gap-4 sm:grid-cols-2">
+              <DeviceField
+                gpus={hardware?.gpu ?? []}
+                value={sc.device}
+                onChange={(v) => update({ device: v })}
+              />
               <SelectField
                 label="Capas en la GPU"
                 value={sc.nGpuLayers === null ? "auto" : String(sc.nGpuLayers)}
@@ -246,13 +272,6 @@ export default function ConfigureView({
                   })),
                 ]}
                 hint="Todas las capas es lo más rápido, si la VRAM alcanza."
-              />
-              <NumberField
-                label="Dispositivo"
-                value={0}
-                onChange={() => {}}
-                disabled
-                hint="Se detecta automáticamente en el Panel."
               />
               <SelectField
                 label="Flash Attention"
@@ -282,6 +301,84 @@ export default function ConfigureView({
                 hint="Sustituye a las antiguas --mmap y --mlock."
               />
             </div>
+
+            {/* --- Reparto entre varias GPUs --- */}
+            {gpus.length > 1 && (
+              <div className="mt-4 space-y-3 border-t border-base-800 pt-4">
+                <label className="flex cursor-pointer items-start gap-2.5">
+                  <input
+                    type="checkbox"
+                    className="mt-0.5 h-4 w-4 shrink-0 cursor-pointer accent-accent-500"
+                    checked={sc.multiGpu}
+                    onChange={(e) => update({ multiGpu: e.target.checked })}
+                  />
+                  <span className="min-w-0">
+                    <span className="block text-xs font-medium text-ink-100">
+                      Repartir el modelo entre las tarjetas
+                    </span>
+                    <span className="mt-0.5 block text-[0.6875rem] leading-relaxed text-ink-500">
+                      En lugar de cargarlo todo en la primera, las capas se
+                      reparten entre las GPUs seleccionadas. Con dos tarjetas
+                      con 16 GB cada una puedes cargar un modelo que no cabe
+                      en una sola.
+                    </span>
+                  </span>
+                </label>
+
+                {sc.multiGpu && (
+                  <div className="grid gap-4 sm:grid-cols-2">
+                    <Field
+                      label="Reparto (tensor-split)"
+                      hint="Proporción de capas por dispositivo, separada por comas. Con 2 GPUs: 1,1 (mitad y mitad), 3,1 (75% en la primera)."
+                    >
+                      <input
+                        className="field mono"
+                        value={sc.tensorSplit ?? ""}
+                        placeholder="1,1"
+                        onChange={(e) =>
+                          update({ tensorSplit: e.target.value || null })
+                        }
+                      />
+                    </Field>
+                    <SelectField
+                      label="Unidad de reparto"
+                      value={sc.splitMode}
+                      onChange={(v) => update({ splitMode: v })}
+                      options={SPLIT_MODES}
+                      hint="Por capas reparte de forma más equilibrada; por filas puede ir algo mejor."
+                    />
+                  </div>
+                )}
+              </div>
+            )}
+          </Card>
+
+          {/* --- Flags avanzados --- */}
+          <Card
+            title="Flags avanzados"
+            subtitle="Comandos extra de llama-server, para lo que no hay campo."
+          >
+            <Field
+              label="Argumentos adicionales"
+              hint='Se añaden al final del comando, así que pisan lo que genere la app. Admite comillas. Ejemplo: --temp 0.7 --top-p 0.9 --jinja "-cnv"' 
+            >
+              <input
+                className="field mono text-xs"
+                value={sc.extraArgs}
+                placeholder="--temp 0.7 --top-p 0.9"
+                onChange={(e) => update({ extraArgs: e.target.value })}
+              />
+            </Field>
+            {sc.extraArgs.trim() && (
+              <div className="mt-3 rounded-lg bg-base-950 p-3">
+                <p className="mb-1.5 text-[0.6875rem] font-medium text-ink-400">
+                  Se añadirá al final
+                </p>
+                <p className="mono text-[0.6875rem] break-all text-accent-300">
+                  {sc.extraArgs.trim()}
+                </p>
+              </div>
+            )}
           </Card>
 
           {/* --- Procesador y red --- */}
@@ -443,6 +540,115 @@ export default function ConfigureView({
         </div>
       </div>
     </div>
+  );
+}
+
+/**
+ * Selección de dispositivo(s) de GPU.
+ *
+ * El valor es la lista que espera `--device`: "Vulkan0", "Vulkan0,Vulkan1".
+ * Con varias GPUs seleccionadas se activa el reparto entre ellas.
+ */
+function DeviceField({
+  gpus,
+  value,
+  onChange,
+}: {
+  gpus: GpuDevice[];
+  value: string | null;
+  onChange: (v: string | null) => void;
+}) {
+  if (gpus.length === 0) {
+    return (
+      <Field
+        label="Tarjeta gráfica"
+        hint="No se ha detectado ninguna GPU. Se usará el dispositivo por defecto de llama.cpp."
+      >
+        <div className="field flex items-center text-xs text-ink-500">
+          Sin GPU detectada
+        </div>
+      </Field>
+    );
+  }
+
+  const selected = (value ?? "").split(",").filter(Boolean);
+  const ids = gpus.map((g) => `${g.api}${g.index}`);
+
+  const toggle = (id: string) => {
+    const next = selected.includes(id)
+      ? selected.filter((s) => s !== id)
+      : [...selected, id];
+    // Se mantiene el orden de la lista de GPUs, no el de pulsación.
+    const ordered = ids.filter((i) => next.includes(i));
+    onChange(ordered.length === 0 ? null : ordered.join(","));
+  };
+
+  return (
+    <Field
+      label="Tarjeta gráfica"
+      hint={
+        gpus.length > 1
+          ? "Puedes elegir varias para repartir el modelo entre ellas."
+          : "Dispositivo donde se cargan los pesos del modelo."
+      }
+    >
+      <div className="space-y-1.5">
+        {gpus.map((g) => {
+          const id = `${g.api}${g.index}`;
+          const on = selected.includes(id);
+          return (
+            <button
+              key={id}
+              onClick={() => toggle(id)}
+              className={clsx(
+                "flex w-full cursor-pointer items-center gap-2.5 rounded-lg border px-2.5 py-2 text-left transition-colors duration-200",
+                on
+                  ? "border-accent-500/50 bg-accent-600/12"
+                  : "border-base-750 bg-base-950 hover:border-base-700",
+              )}
+              aria-pressed={on}
+            >
+              <span
+                className={clsx(
+                  "flex h-4 w-4 shrink-0 items-center justify-center rounded border",
+                  on ? "border-accent-500 bg-accent-500" : "border-base-600",
+                )}
+              >
+                {on && (
+                  <svg width="10" height="10" viewBox="0 0 24 24" fill="none">
+                    <path
+                      d="m5 13 4 4L19 7"
+                      stroke="#04150e"
+                      strokeWidth="3.5"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    />
+                  </svg>
+                )}
+              </span>
+              <span className="min-w-0 flex-1">
+                <span className="block truncate text-xs text-ink-100">{g.name}</span>
+                <span className="mt-0.5 flex flex-wrap items-center gap-1.5">
+                  <span className="mono text-[0.6875rem] text-ink-500">{id}</span>
+                  <span className="chip">
+                    {g.kind === "discrete"
+                      ? "Dedicada"
+                      : g.kind === "integrated"
+                        ? "Integrada"
+                        : g.kind}
+                  </span>
+                  {g.vramTotalMib > 0 && (
+                    <span className="mono text-[0.6875rem] text-ink-500">
+                      {(g.vramTotalMib / 1024).toFixed(1)} GB
+                    </span>
+                  )}
+                </span>
+              </span>
+            </button>
+          );
+        })}
+      </div>
+    </Field>
   );
 }
 

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import clsx from "clsx";
-import { Activity, Cpu, Download, Layers, Settings2, Zap } from "lucide-react";
+import { Activity, Cpu, Download, Layers, Settings2, SlidersHorizontal, Zap } from "lucide-react";
 
 import { api } from "./lib/api";
 import { ToastProvider, useToast } from "./components/ui";
@@ -11,14 +11,16 @@ import ModelsView from "./views/ModelsView";
 import ConfigureView from "./views/ConfigureView";
 import DashboardView from "./views/DashboardView";
 import SettingsView from "./views/SettingsView";
+import ProfilesView from "./views/ProfilesView";
 
-type ViewId = "dashboard" | "releases" | "models" | "configure" | "settings";
+type ViewId = "dashboard" | "releases" | "models" | "configure" | "profiles" | "settings";
 
 const NAV: { id: ViewId; label: string; icon: typeof Activity; hint: string }[] = [
   { id: "dashboard", label: "Panel", icon: Activity, hint: "Estado del equipo y del servidor" },
   { id: "releases", label: "llama.cpp", icon: Download, hint: "Instalar binarios oficiales" },
   { id: "models", label: "Modelos", icon: Layers, hint: "Catálogo GGUF, MTP y mmproj" },
   { id: "configure", label: "Configurar", icon: Settings2, hint: "Parámetros del servidor" },
+  { id: "profiles", label: "Perfiles", icon: SlidersHorizontal, hint: "Modelos con su configuración" },
   { id: "settings", label: "Ajustes", icon: Cpu, hint: "Rutas, token y equipo" },
 ];
 
@@ -162,6 +164,7 @@ function Shell() {
           <ConfigureView
             config={config}
             server={server}
+            hardware={hardware}
             selectedModel={selectedModel}
             selectedMmproj={selectedMmproj}
             selectedDraft={selectedDraft}
@@ -169,6 +172,21 @@ function Shell() {
             onStart={handleStart}
             onStop={handleStop}
             busy={busy}
+          />
+        );
+      case "profiles":
+        return (
+          <ProfilesView
+            config={config}
+            selectedModel={selectedModel}
+            selectedMmproj={selectedMmproj}
+            selectedDraft={selectedDraft}
+            onConfigChange={saveConfig}
+            onApply={(cfg) => {
+              setSelectedModel(cfg.lastModel);
+              setSelectedMmproj(cfg.lastMmproj);
+              setSelectedDraft(cfg.lastDraftModel);
+            }}
           />
         );
       case "settings":

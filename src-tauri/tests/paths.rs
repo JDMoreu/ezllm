@@ -7,3 +7,8 @@ use ezllamacpp_lib::paths_probe;
 fn prints_data_paths() {
     println!("{}", paths_probe::report());
 }
+
+#[test]
+fn prints_flags_from_saved_config() {
+    println!("{}", ezllamacpp_lib::live_check::flags_from_saved_config());
+}

@@ -11,8 +11,10 @@ import type {
   InstallResult,
   MemoryEstimate,
   ModelInfo,
+  ModelProfile,
   ReleaseView,
   ServerStatus,
+  StableRelease,
 } from "../types";
 
 export const api = {
@@ -28,6 +30,8 @@ export const api = {
   getRelease: (tag: string) => invoke<ReleaseView>("get_release", { tag }),
   resolveStableTag: (stableTag: string) =>
     invoke<string>("resolve_stable_tag", { stableTag }),
+  listStableReleases: (perPage = 20) =>
+    invoke<StableRelease[]>("list_stable_releases", { perPage }),
 
   // --- Instalación -------------------------------------------------------
   installRelease: (tag: string, assetName: string) =>
@@ -74,6 +78,15 @@ export const api = {
     draftModel: string | null,
   ) => invoke<string[]>("preview_flags", { modelPath, mmproj, draftModel }),
   contextSteps: (ctxMax: number) => invoke<number[]>("context_steps", { ctxMax }),
+
+  // --- Perfiles -----------------------------------------------------------
+  listProfiles: () => invoke<ModelProfile[]>("list_profiles"),
+  saveProfile: (profile: ModelProfile) => invoke<ModelProfile>("save_profile", { profile }),
+  deleteProfile: (id: string) => invoke<string>("delete_profile", { id }),
+  applyProfile: (id: string) =>
+    invoke<[AppConfig, ModelProfile]>("apply_profile", { id }),
+  duplicateProfile: (id: string, newName: string) =>
+    invoke<ModelProfile>("duplicate_profile", { id, newName }),
 
   // --- Utilidades --------------------------------------------------------
   llamaServerPath: () => invoke<string | null>("llama_server_path"),

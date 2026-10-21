@@ -34,9 +34,6 @@ export default function DashboardView({
   busy: boolean;
 }) {
   const gpu = hardware?.gpu[0];
-  const vramTotal = gpu ? gpu.vramTotalMib : 0;
-  const vramFree = gpu ? gpu.vramFreeMib : 0;
-  const vramUsed = Math.max(0, vramTotal - vramFree);
 
   const steps: {
     id: NavTarget;
@@ -129,28 +126,45 @@ export default function DashboardView({
             </p>
           ) : (
             <div className="space-y-3">
-              <div className="flex items-start gap-2.5">
-                <span className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-accent-600/15 text-accent-400">
-                  <Zap size={15} />
-                </span>
-                <div className="min-w-0">
-                  <p className="text-xs font-medium text-ink-100">{gpu.name}</p>
-                  <p className="mt-0.5 flex flex-wrap items-center gap-1.5 text-[0.6875rem] text-ink-500">
-                    <span className="mono uppercase">{gpu.api}</span>
-                    <span className="chip">
-                      {gpu.kind === "discrete" ? "Dedicada" : gpu.kind === "integrated" ? "Integrada" : gpu.kind}
+              {(hardware?.gpu ?? []).map((g, i) => (
+                <div key={i} className="space-y-2.5">
+                  {i > 0 && <div className="border-t border-base-800 pt-2.5" />}
+                  <div className="flex items-start gap-2.5">
+                    <span className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-accent-600/15 text-accent-400">
+                      <Zap size={15} />
                     </span>
-                  </p>
+                    <div className="min-w-0 flex-1">
+                      <p className="text-xs font-medium text-ink-100">{g.name}</p>
+                      <p className="mt-0.5 flex flex-wrap items-center gap-1.5 text-[0.6875rem] text-ink-500">
+                        <span className="mono uppercase">
+                          {g.api}
+                          {g.index}
+                        </span>
+                        <span className="chip">
+                          {g.kind === "discrete"
+                            ? "Dedicada"
+                            : g.kind === "integrated"
+                              ? "Integrada"
+                              : g.kind}
+                        </span>
+                        {g.vramTotalMib > 0 && (
+                          <span className="mono">
+                            {(g.vramTotalMib / 1024).toFixed(1)} GB
+                          </span>
+                        )}
+                      </p>
+                    </div>
+                  </div>
+                  {g.vramTotalMib > 0 && (
+                    <Meter
+                      value={g.vramTotalMib - g.vramFreeMib}
+                      max={g.vramTotalMib}
+                      label="VRAM en uso"
+                      valueLabel={`${formatBytes((g.vramTotalMib - g.vramFreeMib) * 1024 * 1024)} / ${formatBytes(g.vramTotalMib * 1024 * 1024)}`}
+                    />
+                  )}
                 </div>
-              </div>
-              {vramTotal > 0 && (
-                <Meter
-                  value={vramUsed}
-                  max={vramTotal}
-                  label="VRAM en uso"
-                  valueLabel={`${formatBytes(vramUsed * 1024 * 1024)} / ${formatBytes(vramTotal * 1024 * 1024)}`}
-                />
-              )}
+              ))}
             </div>
           )}
         </Card>

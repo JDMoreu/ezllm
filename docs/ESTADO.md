@@ -94,6 +94,48 @@ Todo esto se hizo con la app real en marcha, no con simulaciones:
   — descargado de `ggml-org/models` en Hugging Face. Es un modelo diminuto
   de stories: sirve para verificar el flujo, no para conversa útil.
 
+## Funciones añadidas tras la primera entrega (20 oct 2026)
+
+### Correcciones de bugs
+| Bug | Causa | Corrección |
+|---|---|---|
+| El nombre del procesador salía con cuadritos | `RegQueryValueExA` devuelve ANSI; se leía el buffer entero (512 bytes) en vez de los `size` bytes válidos | Recorte exacto por `size` + decodificación UTF-8. Test con el caso real |
+| Solo se detectaba la GPU dedicada | `llama-server --list-devices` solo lista los dispositivos que usa el backend | Se combina con `vulkaninfo` para recuperar las GPUs que falten |
+| El panel solo pintaba la primera GPU | `hardware.gpu[0]` | Ahora se listan todas, con su VRAM y su tipo |
+
+### Selección de GPU y reparto
+- **Tarjeta gráfica**: se elige una o varias con checkboxes. El valor es la
+  lista que espera `--device`: `Vulkan0`, `Vulkan0,Vulkan1`.
+- **Repartir entre tarjetas**: activa `--tensor-split` y `--split-mode`
+  (por capas o por filas). Solo se emiten si el reparto está activo.
+- **Ejemplo verificado**:
+  ```
+  -c 8192 -b 2048 -ub 512 --device vulkan0,vulkan1 --tensor-split 1,1 --host 127.0.0.1 --port 9931 --temp 0.7 --top-p 0.9 --jinja -cnv
+  ```
+  El servidor arranca con esa configuración y `/health` responde `{"status":"ok"}`.
+
+### Flags avanzados
+- Campo **Argumentos adicionales** en Configurar: texto libre que se añade
+  al FINAL del comando, así que pisa lo que genere la app.
+- Admite comillas: `--jinja "-cnv"` se trata como un solo argumento.
+-Va también en cada perfil.
+
+### Perfiles de modelo
+Sección nueva **Perfiles**:
+- Guarda un modelo (principal + mmproj + MTP) con su configuración completa
+  y sus flags.
+- Se aplican de un clic: la configuración pasa a ser la activa y los modelos
+  quedan seleccionados. No hay que reconfigurar en cada arranque.
+- Se pueden duplicar (variantes sin perder el original) y eliminar.
+- El perfil activo se marca y se recuerda entre sesiones.
+
+### Instalación por versión
+- Selector de canal **Nightly / Estables** en la sección llama.cpp.
+- Las releases estables (`vX.Y.Z`) no traen binarios: la app resuelve su
+  `nightly-tag.txt` y muestra el tag `b#####` equivalente.
+- Se pueden instalar varias versiones a la vez (Vulkan, CUDA, ROCm…), cada
+  una en su carpeta `llama.cpp/<tag>/`, y se puede borrar una concreta.
+
 ## Prueba de regresión de la UI
 
 El asset recomendado (Vulkan) quedaba al final de la lista: había que hacer
