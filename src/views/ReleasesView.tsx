@@ -287,6 +287,17 @@ export default function ReleasesView({
           const isOpen = expanded === rel.tag;
           const compat = rel.assets.filter((a) => a.compatible && !a.isCudart);
           const recommended = rel.recommended;
+          // El recomendado va PRIMERO: es la opcion que el usuario quiere
+          // y no debe exigir scroll para llegar a ella.
+          const ordered = [...compat].sort((a, b) => {
+            const ra = a.name === recommended ? 0 : 1;
+            const rb = b.name === recommended ? 0 : 1;
+            if (ra !== rb) return ra - rb;
+            const oa = backendOrder(a.backend);
+            const ob = backendOrder(b.backend);
+            if (oa !== ob) return oa - ob;
+            return a.size - b.size;
+          });
 
           return (
             <section key={rel.tag} className="card overflow-hidden">
@@ -343,7 +354,7 @@ export default function ReleasesView({
                     </div>
                   ) : (
                     <ul className="divide-y divide-base-800">
-                      {compat.map((asset) => (
+                      {ordered.map((asset) => (
                         <AssetRow
                           key={asset.name}
                           asset={asset}
@@ -377,6 +388,28 @@ export default function ReleasesView({
       />
     </div>
   );
+}
+
+/** Orden de presentación de los backends: del más habitual al más raro. */
+function backendOrder(backend: string): number {
+  switch (backend) {
+    case "vulkan":
+      return 0;
+    case "cuda":
+      return 1;
+    case "rocm":
+      return 2;
+    case "sycl":
+      return 3;
+    case "openvino":
+      return 4;
+    case "opencl":
+      return 5;
+    case "cpu":
+      return 9;
+    default:
+      return 8;
+  }
 }
 
 function AssetRow({

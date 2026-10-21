@@ -1,8 +1,9 @@
 # EzLlamaCpp — Estado del proyecto
 
 **Última actualización:** 20 de octubre de 2026
-**Estado:** Backend Rust completo y verificado. Frontend React completo y compilando.
-Prueba de ciclo de vida del servidor pendiente (en curso al pausar).
+**Estado:** COMPLETO Y VERIFICADO de extremo a extremo. Todo el flujo probado
+con la app real en marcha: instalar → seleccionar modelo → arrancar → generar
+→ parar.
 
 ---
 
@@ -60,16 +61,45 @@ Vulkan1: AMD Radeon(TM) Graphics (18121 MiB, 17214 MiB free)
 
 ---
 
-## Dónde se quedó (pausa)
+## Ciclo completo verificado desde la UI (20 oct 2026)
 
-**Estaba ejecutándose** el test de ciclo de vida del servidor
-(`src-tauri/tests/server_lifecycle.rs` + `src/server_probe.rs`), recién escritos
-y aún SIN compilar. Falta:
+Todo esto se hizo con la app real en marcha, no con simulaciones:
 
-1. Compilar y ejecutar ese test.
-2. Si arranca bien: instalarlo también desde la UI (falta pulsar el botón
-   «Instalar» de Vulkan — el scroll en la ventana Tauri necesita
-   `delivery_mode=foreground`).
+1. **Instalar** — botón «Instalar» sobre el paquete Vulkan de `b11776`.
+   Resultado: 99 MB en `AppData\Roaming\EzLlamaCpp\llama.cpp\b11776`,
+   `llama-server.exe` con `version: 0.7.0-dev (build 11776, commit ead9f3205)`.
+2. **Escanear** — la carpeta de modelos muestra `stories260K.gguf` con
+   arquitectura `llama`, 5 capas, ctx 2048, F32, 296.344 parámetros,
+   4 cabezas KV, 48 tensores.
+3. **Seleccionar** — queda como «Modelo principal» y se persiste en la config.
+4. **Arrancar** — el sidebar pasa a «En marcha» con `http://127.0.0.1:9931`.
+   - `GET /health` → `{"status":"ok"}`
+   - `GET /v1/models` → lista el GGUF
+   - `POST /v1/chat/completions` → genera texto real:
+     `"Here?" Annabyed.\n"Okay"` (44 tokens de prompt, 20 generados)
+5. **Parar** — 0 procesos `llama-server`, puerto 9931 libre.
+
+### Tests de integración contra la red
+
+| Test | Qué prueba |
+|---|---|
+| `cargo test --test live_api -- --ignored` | La clasificación de assets contra la API real de GitHub |
+| `cargo test --test install_real -- --ignored` | Descarga + verificación SHA-256 + extracción + ejecución |
+| `cargo test --test server_lifecycle -- --ignored` | Arranque en modo router, /health y /v1/models a 200, parada limpia |
+| `cargo test --test model_run -- --ignored` | Arranque con GGUF, carga, generación real y parada |
+
+### Modelos de prueba
+
+- `stories260K.gguf` (1,1 MB) en `AppData\Roaming\EzLlamaCpp\models\`
+  — descargado de `ggml-org/models` en Hugging Face. Es un modelo diminuto
+  de stories: sirve para verificar el flujo, no para conversa útil.
+
+## Prueba de regresión de la UI
+
+El asset recomendado (Vulkan) quedaba al final de la lista: había que hacer
+scroll para llegar al botón «Instalar». Ahora **el recomendado va primero**,
+ordenado por backend habitual (Vulkan → CUDA → ROCm → SYCL → OpenVINO → CPU)
+y luego por tamaño.
 
 ---
 
@@ -80,7 +110,8 @@ y aún SIN compilar. Falta:
 | Recomendaba `cudart-llama-...` en vez de los binarios | `recommend_asset` no filtraba `is_cudart` | Se excluyen los assets `cudart-*` (son el runtime de CUDA, no llama.cpp) |
 | GPU marcada como «Integrada» | El parsing de `vulkaninfo --summary` partía por líneas en blanco; los bloques empiezan por `GPU<n>:` | Se parte por el regex `(?m)^GPU\d+:\s*$` |
 | La app no guardaba nada | `config::load()` solo leía; la carpeta de datos no existía | `load()` crea la carpeta y persiste la config por defecto |
-| El botón «Instalar» no respondía | El botón de Vulkan quedaba en y=805, justo bajo el borde de la ventana de 820 px | Pendiente de verificar si es scroll o clic perdido |
+| El asset recomendado quedaba bajo el borde de la ventana | La lista se ordenaba por tamaño y el Vulkan caía en y=805, bajo el borde de 820 px | El recomendado va primero, con orden por backend habitual |
+| `llama-server --version` no se leía | La versión se escribe por **stderr**, no por stdout | Se lee stdout + stderr |
 
 ---
 

@@ -23,5 +23,20 @@ fn server_starts_answers_and_stops() {
     println!("{report}");
 
     assert!(report.contains("OK: detenido"), "el servidor no paró:\n{report}");
-    assert!(report.contains("200"), "la API no respondió:\n{report}");
+    assert!(
+        report.contains("GET /v1/models -> HTTP 200"),
+        "la API no respondió 200:\n{report}"
+    );
+    assert!(
+        report.contains("GET /health -> HTTP 200"),
+        "/health no respondió 200:\n{report}"
+    );
+    assert!(
+        report.contains("\"data\""),
+        "la respuesta de /v1/models no es la esperada:\n{report}"
+    );
+    assert!(
+        report.contains("listening on"),
+        "el servidor no llegó a escuchar:\n{report}"
+    );
 }
