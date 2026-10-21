@@ -245,13 +245,19 @@ fn gpu_usage(llama_server: Option<&str>) -> Vec<crate::hardware::GpuDevice> {
     let mut devices = crate::hardware::list_devices_via_llama(exe);
     for d in devices.iter_mut() {
         d.source = "llama-server --list-devices".to_string();
+        // El driver devuelve marcas de fabrica como texto ("AMD
+        // Radeon(TM) Graphics"). Se limpian igual que en el reporte de
+        // hardware: es el mismo dato por dos caminos.
+        d.name = crate::hardware::clean_gpu_name(&d.name);
     }
     // Se conserva el tipo resuelto antes: `list_devices_via_llama` lo deja
     // siempre en "discrete", y sin esto la GPU integrada se etiqueta mal.
     let kinds = device_kinds();
     for d in devices.iter_mut() {
-        let key = d.name.trim().to_ascii_lowercase();
-        if let Some((_, kind)) = kinds.iter().find(|(n, _)| *n == key) {
+        if let Some((_, kind)) = kinds
+            .iter()
+            .find(|(n, _)| n.trim().eq_ignore_ascii_case(d.name.trim()))
+        {
             d.kind = kind.clone();
         }
     }
@@ -262,7 +268,12 @@ fn gpu_usage(llama_server: Option<&str>) -> Vec<crate::hardware::GpuDevice> {
 fn device_kinds() -> Vec<(String, String)> {
     static KINDS: std::sync::OnceLock<Vec<(String, String)>> = std::sync::OnceLock::new();
     KINDS
-        .get_or_init(|| crate::hardware::detect_device_kinds())
+        .get_or_init(|| {
+            crate::hardware::detect_device_kinds()
+                .into_iter()
+                .map(|(n, k)| (crate::hardware::clean_gpu_name(&n), k))
+                .collect()
+        })
         .clone()
 }
 

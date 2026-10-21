@@ -161,23 +161,71 @@ fn device_types_from(out: &str) -> Vec<(String, String)> {
         } else {
             "unknown"
         };
-        types.push((name.to_ascii_lowercase(), kind.to_string()));
+        // Se guarda el nombre con su capitalizacion original (es lo que se
+        // muestra) y la clave en minusculas se calcula al comparar. Antes se
+        // guardaba en minusculas y la GPU se veia como "amd radeon rx 9070".
+        types.push((name, kind.to_string()));
     }
     types
 }
 
+/// Limpia el nombre que reporta el driver.
+///
+/// El driver devuelve marcas de fabrica escritas como texto: "AMD
+/// Radeon(TM) Graphics", "Intel(R) UHD Graphics 770", "NVIDIA GeForce
+/// RTX 4070 (R)". En la UI eso se lee como un bug, aunque sea el nombre
+/// real. Se quitan las marcas entre parentesis y se colapsan los espacios.
+pub fn clean_gpu_name(name: &str) -> String {
+    let mut out = String::with_capacity(name.len());
+    let mut depth = 0usize;
+    for ch in name.chars() {
+        match ch {
+            '(' => {
+                depth += 1;
+            }
+            ')' => {
+                depth = depth.saturating_sub(1);
+            }
+            c if depth == 0 => out.push(c),
+            _ => {}
+        }
+    }
+    let cleaned = out.split_whitespace().collect::<Vec<_>>().join(" ");
+    if cleaned.is_empty() {
+        name.trim().to_string()
+    } else {
+        cleaned
+    }
+}
+
 /// GPUs detectadas: combina `llama-server --list-devices` (VRAM real) con
 /// `vulkaninfo --summary` (tipo de GPU).
-pub fn detect_gpus(llama_server: Option<&str>) -> Vec<GpuDevice> {
+fn detect_gpus(llama_server: Option<&str>) -> Vec<GpuDevice> {
     let mut devices = match llama_server {
         Some(exe) => list_devices_via_llama(exe),
         None => Vec::new(),
     };
 
-    let types = device_types_vulkan();
+    for d in devices.iter_mut() {
+        d.name = clean_gpu_name(&d.name);
+    }
+
+    // Los tipos se guardan con el nombre SUCIO (es el que trae el driver),
+    // pero los dispositivos ya vienen limpios: se comparan limpios contra
+    // limpios, o la GPU integrada deja de reconocerse.
+    // Los tipos se guardan LIMPIOS y con su capitalizacion original: la
+    // comparacion es insensible a mayusculas, asi que no hacen falta dos
+    // formas.
+    let types: Vec<(String, String)> = device_types_vulkan()
+        .into_iter()
+        .map(|(n, k)| (clean_gpu_name(&n), k))
+        .collect();
     for d in devices.iter_mut() {
         let key = d.name.trim().to_ascii_lowercase();
-        if let Some((_, kind)) = types.iter().find(|(n, _)| *n == key) {
+        if let Some((_, kind)) = types
+            .iter()
+            .find(|(n, _)| n.to_ascii_lowercase() == key)
+        {
             d.kind = kind.clone();
         } else if key.contains("graphics") && !key.contains("radeon rx") {
             d.kind = "integrated".to_string();
@@ -190,7 +238,7 @@ pub fn detect_gpus(llama_server: Option<&str>) -> Vec<GpuDevice> {
     for (name, kind) in &types {
         let known = devices
             .iter()
-            .any(|d| d.name.trim().to_ascii_lowercase() == *name);
+            .any(|d| d.name.trim().eq_ignore_ascii_case(name));
         if !known {
             devices.push(GpuDevice {
                 name: name.clone(),
@@ -488,9 +536,12 @@ GPU1:
 ";
         let types = device_types_from(out);
         assert_eq!(types.len(), 2, "esperaba 2 GPUs: {types:?}");
-        assert_eq!(types[0].0, "amd radeon rx 9070");
+        // El nombre se guarda con su capitalizacion original: es el que se
+        // muestra. Antes se guardaba en minusculas y la GPU aparecia como
+        // "amd radeon rx 9070" en la interfaz.
+        assert_eq!(types[0].0, "AMD Radeon RX 9070");
         assert_eq!(types[0].1, "discrete");
-        assert_eq!(types[1].0, "amd radeon(tm) graphics");
+        assert_eq!(types[1].0, "AMD Radeon(TM) Graphics");
         assert_eq!(types[1].1, "integrated");
     }
 #[test]
@@ -513,5 +564,51 @@ GPU1:
     fn ram_is_detected() {
         let ram = detect_ram();
         assert!(ram.total_bytes > 0, "no se pudo leer la RAM");
+    }
+
+    #[test]
+    fn gpu_names_lose_their_trademark_marks() {
+        assert_eq!(clean_gpu_name("AMD Radeon(TM) Graphics"), "AMD Radeon Graphics");
+        assert_eq!(
+            clean_gpu_name("Intel(R) UHD Graphics 770"),
+            "Intel UHD Graphics 770"
+        );
+        assert_eq!(
+            clean_gpu_name("NVIDIA GeForce RTX 4070 (R)"),
+            "NVIDIA GeForce RTX 4070"
+        );
+        // Un nombre sin marcas no se toca.
+        assert_eq!(clean_gpu_name("AMD Radeon RX 9070"), "AMD Radeon RX 9070");
+        // Si el nombre era SOLO una marca, se conserva el original.
+        assert_eq!(clean_gpu_name("(TM)"), "(TM)");
+    }
+
+    /// El caso real de este equipo: el driver escribe "AMD Radeon(TM)
+    /// Graphics" y "AMD Radeon RX 9070". Si la limpieza rompe la
+    /// comparacion, la GPU integrada deja de clasificarse y vuelve a
+    /// aparecer como "Dedicada".
+    #[test]
+    fn cleaned_names_still_match_the_device_types() {
+        let types = device_types_from(
+            "GPU0:\n\tdeviceName\t= AMD Radeon RX 9070\n\tdeviceType\t= PHYSICAL_DEVICE_TYPE_DISCRETE\nGPU1:\n\tdeviceName\t= AMD Radeon(TM) Graphics\n\tdeviceType\t= PHYSICAL_DEVICE_TYPE_INTEGRATED\n",
+        );
+        assert_eq!(types.len(), 2);
+
+        // El tipo se resuelve comparando el nombre LIMPIO.
+        let cleaned: Vec<(String, String)> = types
+            .iter()
+            .map(|(n, k)| (clean_gpu_name(n), k.clone()))
+            .collect();
+        assert_eq!(cleaned[0].0, "AMD Radeon RX 9070");
+        assert_eq!(cleaned[0].1, "discrete");
+        assert_eq!(cleaned[1].0, "AMD Radeon Graphics");
+        assert_eq!(cleaned[1].1, "integrated");
+
+        // Y la busqueda es insensible a mayusculas.
+        let name = "AMD Radeon Graphics";
+        let found = cleaned
+            .iter()
+            .find(|(n, _)| n.eq_ignore_ascii_case(name));
+        assert_eq!(found.map(|(_, k)| k.as_str()), Some("integrated"));
     }
 }

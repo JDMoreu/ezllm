@@ -31,11 +31,35 @@ export function Sparkline({
   const path = useMemo(() => {
     if (samples.length < 2) return null;
     const values = samples.map((s) => s.value);
-    const lo = min ?? Math.min(...values);
-    const hi = max ?? Math.max(...values);
-    const span = hi - lo || 1;
+    const dataMin = Math.min(...values);
+    const dataMax = Math.max(...values);
+
+    // La FORMA de la serie muestra la variacion; el VALOR lo dice el numero
+    // que va al lado. Si se escala la forma contra un tope absoluto (100%
+    // de CPU, 100% de RAM), una fluctuacion del 13% al 20% ocupa dos pixels
+    // pegados al borde: la linea existe pero no comunica nada.
+    //
+    // Por eso, sin min/max explicitos, la serie usa su propio rango con un
+    // 12% de margen. El numero que acompaña al grafico es el absoluto.
+    let lo: number;
+    let hi: number;
+    if (min !== undefined && max !== undefined) {
+      lo = min;
+      hi = max;
+    } else {
+      const span = dataMax - dataMin;
+      const margin = span > 1e-9 ? span * 0.12 : Math.max(Math.abs(dataMax) * 0.05, 1);
+      lo = (min ?? dataMin) - margin;
+      hi = (max ?? dataMax) + margin;
+    }
+
+    const span = hi - lo;
+    const flat = span < 1e-9;
     const stepX = 100 / (samples.length - 1);
-    const y = (v: number) => 30 - ((v - lo) / span) * 28;
+    const y = (v: number) => {
+      if (flat) return 16;
+      return 30 - ((v - lo) / span) * 28;
+    };
 
     const line = samples
       .map((s, i) => `${i === 0 ? "M" : "L"}${(i * stepX).toFixed(2)},${y(s.value).toFixed(2)}`)
@@ -98,8 +122,8 @@ export function LiveMeter({
   return (
     <div className={clsx("space-y-1.5", className)}>
       <div className="flex items-baseline justify-between gap-3">
-        <span className="text-xs text-ink-300">{label}</span>
-        <span className="mono text-xs tabular-nums text-ink-100">{valueLabel}</span>
+        <span className="text-label text-ink-300">{label}</span>
+        <span className="mono text-label tabular-nums text-ink-100">{valueLabel}</span>
       </div>
       <div
         className={clsx(
@@ -126,12 +150,15 @@ export function Readout({
   unit,
   hint,
   tone = "default",
+  mono = false,
 }: {
   label: string;
   value: string;
   unit?: string;
   hint?: React.ReactNode;
-  tone?: "default" | "accent" | "warn" | "danger";
+  tone?: "default" | "accent" | "ok" | "warn" | "danger";
+  /** El valor es tecnico (cifras, rutas): se compone en mono. */
+  mono?: boolean;
 }) {
   return (
     <div className="min-w-0">
@@ -140,8 +167,15 @@ export function Readout({
       </p>
       <p
         className={clsx(
-          "mono mt-1 text-2xl leading-none font-semibold tabular-nums",
+          // 20px: el dato es el dato. Si mide lo mismo que el titulo de
+          // vista (24px), los dos compiten y la jerarquia se rompe.
+          "mt-1 text-[1.25rem] leading-none font-semibold tabular-nums",
+          // El mono es un rol de dato TECNICO (cifras, rutas, flags), no un
+          // disfraz: "Detenido" en mono se ve como un valor medido cuando
+          // es solo una palabra.
+          mono && "mono",
           tone === "accent" && "text-accent-400",
+          tone === "ok" && "text-ok-400",
           tone === "warn" && "text-warn-400",
           tone === "danger" && "text-danger-400",
           tone === "default" && "text-ink-100",
@@ -178,7 +212,7 @@ export function Pulse({
         )}
         aria-hidden
       />
-      {label && <span className="text-xs text-ink-300">{label}</span>}
+      {label && <span className="text-label text-ink-300">{label}</span>}
     </span>
   );
 }

@@ -64,7 +64,7 @@
   --color-ink-200: #dde3ec; /* cuerpo de texto */
   --color-ink-300: #bcc5d4; /* secundario */
   --color-ink-400: #8f9bad; /* etiquetas, metadatos */
-  --color-ink-500: #6f7b8d; /* solo 14px+ o decorativo */
+  --color-ink-500: #808c98; /* AA incluso a 12px: 5.33:1 sobre base-900, 4.53:1 sobre base-800 */
   --color-ink-600: #4c5566; /* separadores */
 
   /* --- Acento: la acción en curso -----------------------------------
@@ -212,11 +212,14 @@ body {
   /* --- Superficies --------------------------------------------------- */
 
   /* Una tarjeta = bg-base-900 + border-base-700. Nunca más. */
+  /* Una "card" es una superficie ELEVADA (modal, popover). Una "section" es
+     un bloque de la vista. Si las dos se ven igual, la vista pierde el
+     relieve: todo queda al mismo nivel y el ojo no sabe donde entrar. */
   .card {
     background: var(--color-base-900);
     border: 1px solid var(--color-base-700);
     border-radius: var(--radius-card);
-    box-shadow: var(--shadow-panel);
+    box-shadow: var(--shadow-float);
   }
 
   .panel {
@@ -249,11 +252,7 @@ body {
   }
 
   /* Un input = bg-base-800 + border-base-700. */
-  .well {
-    background: var(--color-base-950);
-    border: 1px solid var(--color-base-800);
-    border-radius: var(--radius-control);
-  }
+
 
   /* --- Botones -------------------------------------------------------- */
 
@@ -371,6 +370,10 @@ body {
   }
 
   /* Etiqueta de campo: 11px, mayúscula, tracking amplio. */
+  /* Etiqueta de campo: 12px, peso 600, tracking amplio. Va en versalitas
+     cuando el campo pertenece a un grupo (lo hace el componente Field con
+     el atributo data-grouped), no siempre: una etiqueta de campo en
+     versalitas sobre todo el formulario suena a formulario de papel. */
   .label {
     display: block;
     font-size: 0.75rem;
@@ -438,15 +441,21 @@ body {
   }
   /* El relleno se escala con `transform`, no con `width`: cambiar el ancho
      recalcula la geometria de toda la pagina 60 veces por segundo. */
+  /* Un medidor es un DATO, no una marca. Con cuatro barras de acento a la
+     vez, el violeta deja de senalar "la accion en curso" y pasa a ser "el
+     color de la app". En estado normal la barra es neutra; el color solo
+     aparece cuando el dato cruza un umbral. */
   .meter > span {
     display: block;
     height: 100%;
     width: 100%;
     border-radius: 999px;
-    background: linear-gradient(90deg, var(--color-accent-600), var(--color-accent-400));
+    background: var(--color-ink-300);
     transform-origin: left center;
     transform: scaleX(var(--fill, 0));
-    transition: transform 400ms var(--ease-out-soft);
+    transition:
+      transform 400ms var(--ease-out-soft),
+      background-color 200ms linear;
   }
   .meter-danger > span {
     background: linear-gradient(90deg, var(--color-danger-500), var(--color-danger-400));
@@ -508,8 +517,11 @@ body {
     background: inherit;
     animation: ez-ping 1.9s var(--ease-out-soft) infinite;
   }
+  /* El verde es EXCLUSIVO del estado "sano". El acento violeta marca la
+     accion en curso: si un punto verde se pintara de violeta, "sano" y
+     "accion" serian el mismo color y la regla no diria nada. */
   .pulse-dot-ok {
-    background: var(--color-accent-400);
+    background: var(--color-ok-400);
   }
   .pulse-dot-warn {
     background: var(--color-warn-400);

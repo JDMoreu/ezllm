@@ -260,6 +260,138 @@ leian "informal" porque comprimian el rango util de la escala.
 Se eliminan `ConfigureView.tsx`, `ModelsView.tsx` y `DeviceField.tsx`: 1757
 lineas que nadie importaba, con dos componentes duplicados.
 
+## Correcciones de correctitud (2026-10-21, segunda ronda)
+
+Todas verificadas contra el binario real, no contra el codigo.
+
+### El bug que hacia que la app se viera plana
+
+La regla global `* { border-color }` estaba FUERA de cualquier `@layer`. En
+Tailwind v4 una regla sin capa gana a TODAS las capas, incluidas las
+`utilities`. Medido en el CSS compilado:
+
+    regla global  @ 36034
+    .border-accent-500 @ 22050
+    .border-danger-500 @ 22783
+    .border-base-800   @ 22731
+
+Es decir: los 53 `border-color` de color de la app eran codigo muerto. Los
+estados seleccionados, los avisos de error y los acentos NO existian, y la
+app se veia plana. La regla va ahora en `@layer base` (posicion 7514) y las
+utilities la ganan.
+
+### El ejemplo que rompia el arranque
+
+El campo "Argumentos adicionales" sugeria `--jinja "-cnv"` como ejemplo.
+`--jinja` es un interruptor (`--jinja` / `--no-jinja`), no admite valor:
+
+    $ llama-server ... --jinja "-cnv"
+    error: invalid argument: -cnv
+
+El servidor moria al arrancar y el usuario no tenia idea de por que. Ahora:
+- el backend valida los flags libres ANTES de arrancar y devuelve un error
+  legible ("`--jinja` no lleva valor: escribe solo `--jinja`, o quitalo");
+- la UI avisa al escribir, antes de arrancar;
+- hay test de regresion.
+
+### Otras correcciones
+
+- Uso de CPU marcaba 100%: el calculo hacia underflow al restar el idle del
+  kernel, que ya lo incluye.
+- La GPU integrada aparecia como "Dedicada": `list_devices_via_llama` deja el
+  tipo siempre en `discrete` y no se cruzaba con `vulkaninfo`.
+- Aplicar un despliegue desde el Panel descartaba el `AppConfig` devuelto:
+  aplicaba un preset y arrancaba otro modelo.
+- La estimacion de memoria ignoraba `cacheTypeV` (el backend usaba el tipo de
+  K para K y V).
+- "VRAM en uso" mentia: es memoria reservada por el driver, no la que ocupa tu
+  modelo. Ahora lo dice.
+- El medidor usaba `width` (recalcula la geometria 60 veces por segundo);
+  ahora usa `transform: scaleX()`.
+- Las fuentes nunca se cargaban: se declaraba "Inter" sin `@font-face`. Ahora
+  IBM Plex Sans y Plex Mono van embebidas, sin depender de la red.
+- La carpeta de modelos se perdia al reiniciar (no se persistia).
+- Se eliminan `ConfigureView.tsx`, `ModelsView.tsx` y `DeviceField.tsx`:
+  1757 lineas que nadie importaba.
+
+## Segunda ronda: lo que decia el critico visual
+
+Una revision con medicion sobre pixeles (no sobre opiniones) devolvio una
+lista de hallazgos. Los que eran bugs, corregidos con test. Los que eran
+decisiones de diseño, corregidas con su justificacion.
+
+### Bugs reales (con test)
+
+- **`border-base-750` no existia.** `Card` usaba un token de color que no
+  esta en `index.css` ni en el CSS compilado: el separador de la cabecera
+  caia al color global y salia mas fuerte que el de `Section`, en la misma
+  pantalla, entre cajas identicas. Ahora es `base-800`.
+- **El sparkline no dibujaba nada.** Con `max={100}` (CPU) y `max={1}` (RAM),
+  una fluctuacion del 13% al 20% ocupaba 2,6 px pegados al borde inferior del
+  viewBox. Medido sobre la captura: cero pixeles violetas en la banda del
+  grafico, solo la linea del fallback. Ahora la serie usa su propio rango con
+  un 12% de margen; el numero absoluto va al lado, la forma muestra la
+  variacion.
+- **El nombre de la GPU salia en minusculas.** `device_types_from` guardaba
+  el nombre en minusculas (para comparar) y ese mismo string se usaba para
+  mostrar: "amd radeon rx 9070". Separados.
+- **La GPU integrada se clasificaba como "Dedicada".** El nombre se
+  comparaba limpio contra un indice sucio. Con test.
+- **"AMD Radeon(TM) Graphics".** El driver escribe las marcas de fabrica
+  como texto. Se limpian en el backend (`clean_gpu_name`), en los DOS caminos
+  que reportan GPUs: el reporte de hardware y la telemetria.
+- **El separador decimal no coincidia.** La app usa coma (`es-ES`) en un
+  sitio y punto en otro: "0.16 GB" junto a "296.344 parametros".
+- **`ink-500` fallaba WCAG AA.** 4,26:1 sobre `base-900`, y se usaba a 12px
+  en frases completas (los datos tecnicos, los que menos pueden bajarse).
+  Ahora `#808c98`: 5,33:1 sobre `base-900` y 4,53:1 sobre `base-800`.
+
+### El sistema de diseño contradiciendose a si mismo
+
+El CSS dice, textual: *"El verde queda LIBRE para 'sano'... Un color, un
+significado."* Y el punto de "servidor sano" era violeta, igual que el
+"Estado: Sano" del Panel. Ahora el verde es exclusivo del estado sano
+(`pulse-dot-ok`, `StatusDot ok`, `Readout tone="ok"`).
+
+Igual con la segunda regla: *"El violeta marca lo experimental (MTP)"* estaba
+intercambiada con el proyector multimodal.
+
+### Jerarquia
+
+- El dato grande (24px) media MAS que el titulo de vista (24px): los dos
+  compiten y no se distinguen. El dato pasa a 20px; el titulo se queda en 24px.
+- La escala declarada no se usaba: 56 saltos a `text-xs` (12px) y
+  `text-body` (13.5px) con CERO usos. La app entera era de 12px. Ahora la
+  prosa va a 13,5px y los datos cortos a 12px.
+- El mono se aplicaba a palabras ("Detenido", "Sano"): un disfraz. Ahora
+  `Readout` tiene un prop `mono` explicito, como `KeyValue`.
+- `Section` y `Card` eran visualmente identicos (mismo fondo, borde, radio y
+  sombra), aunque el docstring de `Section` decia "no una caja mas". Ahora
+  `card` es la superficie elevada (modal, popover) y `section` el bloque de
+  la vista.
+- La franja del despliegue era mas debil que las cajas que resumia, con su
+  etiqueta en 11px. Ahora es una subcabecera: badge, fondo tintado, borde de
+  acento y aire vertical.
+- El estado activo de la barra lateral era un relleno de un gris mas claro:
+  indistinguible de un hover. Ahora lleva riel de acento, icono de acento y
+  peso tipografico.
+- El canal Nightly/Estable: el activo era `base-800` sobre un track
+  `base-850` (7 valores RGB de diferencia). Ahora es acento translucido.
+- El hardware detectado era una nota al pie gris en la vista cuya unica
+  funcion es elegir el binario para TU GPU. Ahora es una lista con icono,
+  nombre, VRAM y tipo.
+- Los medidores eran violeta: son datos, no marca. Ahora son neutros y solo
+  toman color al cruzar un umbral.
+
+### Consistencia
+
+- 7 radios distintos para iconos que son hermanos. Ahora 3, con nombre:
+  `rounded-control` (7px), `rounded-card` (10px), `rounded-panel` (12px).
+- 4 alturas de boton. El boton pequeno ahora mantiene la altura del base.
+- 5 valores de `space-y` en una sola vista. Ahora 2: 16px entre bloques, 8px
+  dentro.
+- La clase `.well` estaba definida y sin usar. Borrada.
+
 ## Prueba de regresión de la UI
 
 El asset recomendado (Vulkan) quedaba al final de la lista: había que hacer

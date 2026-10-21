@@ -343,7 +343,7 @@ export default function DeployView({
   if (!config || !sc) {
     return (
       <Section title="Cargando">
-        <p className="py-6 text-center text-xs text-ink-400">Cargando…</p>
+        <p className="py-6 text-center text-body text-ink-400">Cargando…</p>
       </Section>
     );
   }
@@ -353,7 +353,7 @@ export default function DeployView({
       <header className="flex flex-wrap items-end justify-between gap-4">
         <div>
           <h1 className="text-display font-semibold tracking-tight text-ink-100">Despliegue</h1>
-          <p className="mt-1 max-w-2xl text-xs leading-relaxed text-ink-400">
+          <p className="mt-1 max-w-2xl text-body leading-relaxed text-ink-400">
             Un modelo, sus compañeros y la configuración del servidor. Guárdalo
             como despliegue para cargarlo de un clic la próxima vez.
           </p>
@@ -392,33 +392,36 @@ export default function DeployView({
         {/* ==================== COLUMNA PRINCIPAL ==================== */}
         <div className="space-y-4">
           {/* ---------- EL DESPLIEGUE, EN UNA LINEA ---------- */}
-          <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 rounded-card border border-base-800 bg-base-900 px-3.5 py-2.5 text-label">
-            <span className="text-meta tracking-wide text-ink-400 uppercase">
-              Este despliegue
-            </span>
+          <div className="rounded-card border border-accent-500/40 bg-accent-500/[0.07] px-4 py-3.5">
+            <div className="mb-2 flex items-center gap-2">
+              <span className="chip chip-accent text-[0.6875rem]">
+                Este despliegue
+              </span>
+            </div>
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 text-label">
             <span className="flex items-center gap-1.5">
               <Layers size={12} className="text-accent-400" />
-              <span className="font-medium text-ink-100">
+              <span className="mono font-medium text-ink-100">
                 {selectedModel ? basename(selectedModel) : "Sin modelo"}
               </span>
             </span>
             {selectedMmproj && (
               <span className="flex items-center gap-1.5 text-ink-300">
                 <Video size={12} className="text-violet-400" />
-                {basename(selectedMmproj)}
+                <span className="mono">{basename(selectedMmproj)}</span>
               </span>
             )}
             {selectedDraft && (
               <span className="flex items-center gap-1.5 text-ink-300">
                 <Zap size={12} className="text-info-400" />
-                {basename(selectedDraft)}
+                <span className="mono">{basename(selectedDraft)}</span>
               </span>
             )}
             <span aria-hidden className="text-ink-600">
               ·
             </span>
             <span className="text-ink-300">
-              ctx{" "}
+              contexto{" "}
               <span className="mono text-ink-100">
                 {sc.ctxSize.toLocaleString("es-ES")}
               </span>
@@ -436,12 +439,13 @@ export default function DeployView({
                 en memoria
               </span>
             )}
+            </div>
           </div>
 
           {/* ---------- MODELO ---------- */}
           <Section
             title="Modelo"
-            description="El GGUF con los pesos. Los compañeros son opcionales y sedetectan por nombre."
+            description="El GGUF con los pesos. Los compañeros son opcionales y se detectan por nombre."
             actions={
               <Button
                 size="sm"
@@ -453,7 +457,7 @@ export default function DeployView({
               </Button>
             }
           >
-            <div className="space-y-2.5">
+            <div className="space-y-2">
               <ModelSlot
                 label="Principal"
                 value={selectedModel}
@@ -490,7 +494,7 @@ export default function DeployView({
                       className="pointer-events-none absolute top-1/2 left-2.5 -translate-y-1/2 text-ink-500"
                     />
                     <input
-                      className="field pl-8 text-xs"
+                      className="field pl-8 text-body"
                       placeholder="Filtrar por nombre, arquitectura o cuantización"
                       value={query}
                       onChange={(e) => setQuery(e.target.value)}
@@ -520,7 +524,7 @@ export default function DeployView({
                         >
                           <span
                             className={clsx(
-                              "flex h-5 w-5 shrink-0 items-center justify-center rounded",
+                              "flex h-5 w-5 shrink-0 items-center justify-center rounded-control",
                               e.role === "primary"
                                 ? "bg-accent-500/14 text-accent-400"
                                 : e.role === "mmproj"
@@ -537,7 +541,7 @@ export default function DeployView({
                             )}
                           </span>
                           <span className="min-w-0 flex-1">
-                            <span className="block truncate text-xs text-ink-200">
+                            <span className="block truncate text-label text-ink-200">
                               {e.fileName}
                             </span>
                             <span className="block truncate text-label text-ink-500">
@@ -629,12 +633,12 @@ export default function DeployView({
           >
             <div className="space-y-4">
               {gpus.length === 0 ? (
-                <p className="py-2 text-xs text-ink-400">
+                <p className="py-2 text-body text-ink-400">
                   No se ha detectado ninguna GPU. Se usará el dispositivo por
                   defecto de llama.cpp.
                 </p>
               ) : (
-                <div className="space-y-1.5">
+                <div className="space-y-1">
                   {gpus.map((g) => {
                     const id = `${g.api}${g.index}`;
                     const on = (sc.device ?? "").split(",").includes(id);
@@ -661,7 +665,7 @@ export default function DeployView({
                       >
                         <span
                           className={clsx(
-                            "flex h-4 w-4 shrink-0 items-center justify-center rounded border",
+                            "flex h-4 w-4 shrink-0 items-center justify-center rounded-control border",
                             on ? "border-accent-500 bg-accent-500" : "border-base-700",
                           )}
                         >
@@ -678,7 +682,7 @@ export default function DeployView({
                           )}
                         </span>
                         <span className="min-w-0 flex-1">
-                          <span className="block truncate text-xs text-ink-100">
+                          <span className="block truncate text-label text-ink-100">
                             {g.name}
                           </span>
                           <span className="mt-0.5 flex flex-wrap items-center gap-1.5">
@@ -756,7 +760,7 @@ export default function DeployView({
                     onChange={(e) => update({ multiGpu: e.target.checked })}
                   />
                   <span className="min-w-0">
-                    <span className="block text-xs font-medium text-ink-100">
+                    <span className="block text-label font-medium text-ink-100">
                       Repartir el modelo entre las tarjetas
                     </span>
                     <span className="mt-0.5 block text-label leading-relaxed text-ink-400">
@@ -805,7 +809,7 @@ export default function DeployView({
             actions={
               <button
                 onClick={() => setShowAdvanced((v) => !v)}
-                className="btn-quiet cursor-pointer rounded px-2 py-1 text-xs text-ink-300 hover:text-ink-100"
+                className="btn-quiet cursor-pointer rounded-control px-2 py-1 text-label text-ink-300 hover:text-ink-100"
               >
                 {showAdvanced ? "Ocultar" : "Mostrar"}
               </button>
@@ -861,7 +865,7 @@ export default function DeployView({
                 >
                   <input
                     className={clsx(
-                      "field mono text-xs",
+                      "field mono text-body",
                       extraArgsError && "border-danger-500 focus:border-danger-500",
                     )}
                     value={sc.extraArgs}
@@ -877,7 +881,7 @@ export default function DeployView({
                 )}
               </div>
             ) : (
-              <p className="text-xs text-ink-400">
+              <p className="text-body text-ink-400">
                 Hilos, dirección, puerto, alias y argumentos libres.
               </p>
             )}
@@ -892,11 +896,11 @@ export default function DeployView({
             description={selectedModel ? basename(selectedModel) : "Selecciona un modelo"}
           >
             {!estimate ? (
-              <p className="py-6 text-center text-xs text-ink-400">
+              <p className="py-6 text-center text-body text-ink-400">
                 Selecciona un modelo para ver cuánto ocupará.
               </p>
             ) : (
-              <div className="space-y-3">
+              <div className="space-y-2">
                 <div>
                   <p className="text-label tracking-wide text-ink-400 uppercase">
                     Total
@@ -919,7 +923,7 @@ export default function DeployView({
                       estimate.computeBufferGb,
                   )}
                 />
-                <dl className="space-y-0.5 border-t border-base-800 pt-2">
+                <dl className="space-y-1 border-t border-base-800 pt-2">
                   <KeyValue label="Pesos en GPU" value={formatGb(estimate.weightsGpuGb)} mono />
                   <KeyValue label="Pesos en CPU" value={formatGb(estimate.weightsCpuGb)} mono />
                   <KeyValue
@@ -963,7 +967,7 @@ export default function DeployView({
                       .then(() => toast.push("Comando copiado", "success"))
                       .catch(() => toast.push("No se pudo copiar", "danger"));
                   }}
-                  className="btn-quiet cursor-pointer rounded p-1.5 text-ink-400 hover:text-ink-100"
+                  className="btn-quiet cursor-pointer rounded-control p-1.5 text-ink-400 hover:text-ink-100"
                   title="Copiar el comando"
                   aria-label="Copiar el comando"
                 >
@@ -973,12 +977,19 @@ export default function DeployView({
             }
           >
             {flags.length === 0 ? (
-              <p className="py-3 text-center text-xs text-ink-400">Sin flags.</p>
+              <p className="py-3 text-center text-body text-ink-400">Sin flags.</p>
             ) : (
               <div className="mono max-h-52 overflow-y-auto rounded-control bg-base-950 p-2.5 text-label leading-relaxed break-all text-ink-300">
                 {flags.map((f, i) => (
                   <span key={i}>
-                    <span className="text-accent-400">{f}</span>
+                    {/* El acento va en el NOMBRE del flag, no en todo el
+                        bloque: un bloque mono grande en violeta deja de
+                        decir "esto es un comando" y pasa a ser decoracion. */}
+                    {f.startsWith("-") ? (
+                      <span className="text-accent-400">{f}</span>
+                    ) : (
+                      <span>{f}</span>
+                    )}
                     {i < flags.length - 1 && " "}
                   </span>
                 ))}
@@ -999,7 +1010,7 @@ export default function DeployView({
                       onClick={() => applyDeployment(d)}
                       className="min-w-0 flex-1 cursor-pointer text-left"
                     >
-                      <span className="block truncate text-xs text-ink-100">
+                      <span className="block truncate text-label text-ink-100">
                         {d.name}
                       </span>
                       <span className="block truncate text-label text-ink-500">
@@ -1009,7 +1020,7 @@ export default function DeployView({
                     </button>
                     <button
                       onClick={() => setPendingDelete(d.id)}
-                      className="btn-quiet cursor-pointer rounded p-1.5 text-ink-500 hover:text-danger-400"
+                      className="btn-quiet cursor-pointer rounded-control p-1.5 text-ink-500 hover:text-danger-400"
                       aria-label={`Eliminar ${d.name}`}
                       title="Eliminar"
                     >
@@ -1096,7 +1107,7 @@ function ModelSlot({
         <label className="label">{label}</label>
         <div className="flex gap-1.5">
           <input
-            className="field mono text-xs"
+            className="field mono text-body"
             value={value ? basename(value) : ""}
             placeholder="Sin asignar"
             readOnly

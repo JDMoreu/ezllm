@@ -229,16 +229,22 @@ function Shell() {
                 onClick={() => setView(item.id)}
                 title={item.hint}
                 className={clsx(
-                  "app-sidebar-btn group flex w-full cursor-pointer items-center gap-2.5 rounded-control px-2.5 py-2 text-left text-xs font-medium transition-colors duration-150",
+                  "app-sidebar-btn group relative flex w-full cursor-pointer items-center gap-2.5 rounded-control py-2 pr-2.5 pl-3 text-left text-label font-medium transition-colors duration-150",
                   active
-                    ? "bg-base-850 text-ink-100"
+                    ? "bg-base-850 font-semibold text-ink-100"
                     : "text-ink-400 hover:bg-base-900 hover:text-ink-200",
                 )}
                 aria-current={active ? "page" : undefined}
               >
+                {active && (
+                  <span
+                    aria-hidden
+                    className="absolute inset-y-1.5 left-0 w-[2px] rounded-full bg-accent-400"
+                  />
+                )}
                 <span
                   className={clsx(
-                    "flex h-5 w-5 shrink-0 items-center justify-center rounded transition-colors duration-150",
+                    "flex h-5 w-5 shrink-0 items-center justify-center rounded-control transition-colors duration-150",
                     active
                       ? "text-accent-400"
                       : "text-ink-500 group-hover:text-ink-300",
@@ -287,7 +293,7 @@ function Shell() {
             onClick={server?.running ? handleStop : handleStart}
             disabled={busy}
             className={clsx(
-              "flex w-full cursor-pointer items-center justify-center gap-2 rounded-control px-3 py-2 text-xs font-semibold transition-colors duration-150",
+              "flex w-full cursor-pointer items-center justify-center gap-2 rounded-control px-3 py-2 text-body font-semibold transition-colors duration-150",
               server?.running
                 ? "bg-danger-500/15 text-danger-400 hover:bg-danger-500/25"
                 : "bg-accent-500 text-[#08091c] hover:bg-accent-400",

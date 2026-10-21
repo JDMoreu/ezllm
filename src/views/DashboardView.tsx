@@ -76,7 +76,7 @@ export default function DashboardView({
       <header className="flex flex-wrap items-end justify-between gap-4">
         <div>
           <h1 className="text-display font-semibold tracking-tight text-ink-100">Panel</h1>
-          <p className="mt-1 text-xs text-ink-400">
+          <p className="mt-1 text-body text-ink-400">
             Estado medido del equipo y del servidor. Los valores se releen cada
             segundo.
           </p>
@@ -102,7 +102,9 @@ export default function DashboardView({
           <Readout
             label="Estado"
             value={running ? (server?.health ? "Sano" : "Cargando") : "Detenido"}
-            tone={running ? (server?.health ? "accent" : "warn") : "default"}
+            // "Sano" es el estado verde reservado. "Cargando" es atencion.
+            // El violeta es la accion en curso, no la salud.
+            tone={running ? (server?.health ? "ok" : "warn") : "default"}
             hint={
               running
                 ? `Activo desde hace ${elapsed(server?.startedAt)}`
@@ -113,6 +115,7 @@ export default function DashboardView({
             label="Dirección"
             value={running ? `${server?.host}:${server?.port}` : "—"}
             hint={running ? "Escucha en este puerto" : undefined}
+            mono
           />
           <Readout
             label="Modelo"
@@ -124,10 +127,12 @@ export default function DashboardView({
                   : "—"
             }
             hint={server?.models.length ? "Cargado en memoria" : "Seleccionado, no cargado"}
+            mono
           />
           <Readout
             label="Slots"
             value={tel.slots ? `${tel.slots.busy}/${tel.slots.total}` : "—"}
+            mono
             tone={tel.slots && tel.slots.busy > 0 ? "accent" : "default"}
             hint={
               tel.slots
@@ -159,14 +164,14 @@ export default function DashboardView({
       </Section>
 
       {/* ================= RECURSOS ================= */}
-      <div className="grid gap-4 xl:grid-cols-2">
+      <div className="grid items-start gap-4 xl:grid-cols-2">
         {/* GPU */}
         <Section
           title="Tarjetas gráficas"
           description="VRAM real, leída con la misma API que usa llama.cpp."
         >
           {gpus.length === 0 ? (
-            <p className="py-6 text-center text-xs text-ink-400">
+            <p className="py-6 text-center text-body text-ink-400">
               No se ha detectado ninguna GPU. Instala llama.cpp para consultarla.
             </p>
           ) : (
@@ -181,7 +186,7 @@ export default function DashboardView({
                         <Zap size={13} />
                       </span>
                       <div className="min-w-0 flex-1">
-                        <p className="truncate text-xs font-medium text-ink-100">
+                        <p className="truncate text-label font-medium text-ink-100">
                           {g.name}
                         </p>
                         <p className="mt-0.5 flex flex-wrap items-center gap-1.5 text-label text-ink-400">
@@ -243,7 +248,7 @@ export default function DashboardView({
                 <Cpu size={13} />
               </span>
               <div className="min-w-0 flex-1">
-                <p className="truncate text-xs font-medium text-ink-100">
+                <p className="truncate text-label font-medium text-ink-100">
                   {hardware?.cpu.model ?? "—"}
                 </p>
                 <p className="mt-0.5 text-label text-ink-400">
@@ -265,7 +270,6 @@ export default function DashboardView({
               <Sparkline
                 samples={tel.cpuSeries.values()}
                 height={32}
-                max={100}
                 tone={cpuPct > 90 ? "danger" : cpuPct > 70 ? "warn" : undefined}
               />
             </div>
@@ -291,7 +295,6 @@ export default function DashboardView({
               <Sparkline
                 samples={tel.ramSeries.values()}
                 height={32}
-                max={1}
                 tone={
                   ramTotal > 0 && ramUsed / ramTotal > 0.92
                     ? "danger"
@@ -333,7 +336,7 @@ export default function DashboardView({
                     <Play size={12} />
                   </span>
                   <span className="min-w-0 flex-1">
-                    <span className="block truncate text-xs font-medium text-ink-100">
+                    <span className="block truncate text-label font-medium text-ink-100">
                       {d.name}
                     </span>
                     <span className="mt-0.5 block truncate text-label text-ink-400">
@@ -364,7 +367,7 @@ export default function DashboardView({
             <span className="flex h-9 w-9 items-center justify-center rounded-card bg-base-850 text-ink-400">
               <Activity size={16} />
             </span>
-            <p className="max-w-sm text-xs leading-relaxed text-ink-400">
+            <p className="max-w-sm text-body leading-relaxed text-ink-400">
               Un despliegue es un modelo con su configuración guardada. Elige
               un GGUF, ajústalo y guárdalo: la próxima vez se carga de un clic.
             </p>

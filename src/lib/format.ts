@@ -8,9 +8,22 @@ export function formatBytes(bytes: number, decimals = 1): string {
   return `${value.toFixed(i === 0 ? 0 : decimals)} ${units[i]}`;
 }
 
+/**
+ * Bytes forzando una unidad.
+ *
+ * Sin esto, la misma columna mezcla "9.7 GB" y "907.0 MB": dos numeros que
+ * no se pueden comparar de un vistazo. Cuando se comparan dos cifras de la
+ * misma metrica, la unidad tiene que ser la misma.
+ */
+export function formatBytesAs(bytes: number, unit: "MiB" | "GiB", decimals = 1): string {
+  if (!Number.isFinite(bytes) || bytes <= 0) return `0 ${unit}`;
+  const div = unit === "MiB" ? 1024 ** 2 : 1024 ** 3;
+  return `${(bytes / div).toFixed(decimals)} ${unit}`;
+}
+
 export function formatGb(gb: number, decimals = 2): string {
   if (!Number.isFinite(gb)) return "—";
-  return `${gb.toFixed(decimals)} GB`;
+  return `${gb.toFixed(decimals).replace(".", ",")} GB`;
 }
 
 export function formatMiB(mib: number, decimals = 0): string {

@@ -154,7 +154,6 @@ export default function ReleasesView({
   );
 
   const backendFilter = config?.preferredBackend ?? "auto";
-  const gpuNames = (hardware?.gpu ?? []).map((g) => g.name);
 
   const filteredReleases = useMemo(() => {
     if (backendFilter === "auto") return releases;
@@ -165,13 +164,13 @@ export default function ReleasesView({
   }, [releases, backendFilter]);
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-4">
       <header className="flex flex-wrap items-end justify-between gap-4">
         <div>
           <h1 className="text-display font-semibold tracking-tight text-ink-100">
             llama.cpp
           </h1>
-          <p className="mt-1 max-w-2xl text-xs leading-relaxed text-ink-400">
+          <p className="mt-1 max-w-2xl text-body leading-relaxed text-ink-400">
             Binarios oficiales de{" "}
             <span className="mono text-ink-300">ggml-org/llama.cpp</span>, verificados
             con el hash SHA-256 que publica GitHub antes de instalarse.
@@ -196,7 +195,7 @@ export default function ReleasesView({
                 onClick={() => setChannel(id)}
                 title={hint}
                 className={clsx(
-                  "cursor-pointer rounded-control px-2.5 py-1 text-xs font-medium transition-colors duration-150",
+                  "cursor-pointer rounded-control px-2.5 py-1 text-label font-medium transition-colors duration-150",
                   channel === id
                     ? "bg-base-800 text-ink-100 shadow-[inset_0_1px_0_0_rgb(255_255_255/0.04)]"
                     : "text-ink-400 hover:text-ink-200",
@@ -263,7 +262,7 @@ export default function ReleasesView({
                   <HardDrive size={14} />
                 </span>
                 <div className="min-w-0 flex-1">
-                  <p className="mono text-xs font-medium text-ink-100">{b.tag}</p>
+                  <p className="mono text-label font-medium text-ink-100">{b.tag}</p>
                   <p className="truncate text-label text-ink-500" title={b.dir}>
                     {b.dir}
                   </p>
@@ -288,7 +287,7 @@ export default function ReleasesView({
         description="Qué paquete encaja con tu hardware y por qué."
         actions={
           <select
-            className="field w-auto py-1 text-xs"
+            className="field w-auto py-1 text-label"
             value={backendFilter}
             onChange={(e) =>
               config &&
@@ -307,22 +306,46 @@ export default function ReleasesView({
           </select>
         }
       >
-        <p className="text-xs leading-relaxed text-ink-300">
+        <p className="text-body leading-relaxed text-ink-300">
           {backendFilter === "auto"
             ? "Vulkan es la opción por defecto: funciona con la mayoría de GPUs de escritorio sin instalar drivers extra."
             : `Solo se ofrecerán los paquetes de ${backendFilter.toUpperCase()}.`}
         </p>
-        {gpuNames.length > 0 && (
-          <p className="mt-2 border-t border-base-800 pt-2 text-label text-ink-400">
-            Detectado: {gpuNames.join(", ")}
-          </p>
+        {hardware && hardware.gpu.length > 0 && (
+          <div className="mt-3 space-y-1 border-t border-base-800 pt-3">
+            <p className="text-meta tracking-wide text-ink-400 uppercase">
+              En este equipo
+            </p>
+            {hardware.gpu.map((g, i) => (
+              <div key={i} className="flex items-center gap-2.5">
+                <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-control bg-accent-500/12 text-accent-400">
+                  <Cpu size={12} />
+                </span>
+                <span className="min-w-0 flex-1 truncate text-label text-ink-200">
+                  {g.name}
+                </span>
+                <span className="mono text-meta text-ink-400">
+                  {g.vramTotalMib > 0
+                    ? `${(g.vramTotalMib / 1024).toFixed(1)} GB`
+                    : g.api}
+                </span>
+                <span className="chip">
+                  {g.kind === "discrete"
+                    ? "Dedicada"
+                    : g.kind === "integrated"
+                      ? "Integrada"
+                      : g.kind}
+                </span>
+              </div>
+            ))}
+          </div>
         )}
       </Section>
 
       {/* --- Progreso de descarga --- */}
       {progress && (
         <Card title={`Instalando ${installing ?? ""}`}>
-          <div className="space-y-2.5">
+          <div className="space-y-2">
             <Meter
               value={progress.downloaded}
               max={progress.total || 1}
@@ -341,7 +364,7 @@ export default function ReleasesView({
 
       {/* --- Releases estables --- */}
       {channel === "stable" && (
-        <div className="space-y-3">
+        <div className="space-y-2">
           <Alert tone="info" title="Cómo funcionan las versiones estables">
             Las releases con etiqueta <span className="mono">vX.Y.Z</span> no
             publican binarios: publican un puntero{" "}
@@ -353,7 +376,7 @@ export default function ReleasesView({
 
           {stable.length === 0 && !loadingStable && (
             <Section title="Sin versiones estables">
-              <p className="py-4 text-center text-xs text-ink-400">
+              <p className="py-4 text-center text-body text-ink-400">
                 No se encontraron releases estables.
               </p>
             </Section>
@@ -416,7 +439,7 @@ export default function ReleasesView({
                         </span>
                         <div className="min-w-0 flex-1">
                           <div className="flex flex-wrap items-center gap-1.5">
-                            <span className="text-xs font-medium text-ink-100">
+                            <span className="text-label font-medium text-ink-100">
                               {backendLabel(asset.backend)}
                             </span>
                             {asset.name === s.recommended && (
@@ -464,10 +487,10 @@ export default function ReleasesView({
       )}
 
       {/* --- Releases nightly --- */}
-      <div className={clsx("space-y-2.5", channel === "stable" && "hidden")}>
+      <div className={clsx("space-y-2", channel === "stable" && "hidden")}>
         {loading && releases.length === 0 && (
           <Card>
-            <div className="flex items-center gap-3 py-6 text-xs text-ink-400">
+            <div className="flex items-center gap-3 py-6 text-body text-ink-400">
               <RefreshCw size={14} className="animate-spin" />
               Consultando las releases oficiales…
             </div>
@@ -508,7 +531,7 @@ export default function ReleasesView({
                     <span className="mono text-[0.8125rem] font-semibold text-ink-100">
                       {rel.tag}
                     </span>
-                    {rel.prerelease && <span className="chip">Nightly</span>}
+                    {rel.prerelease && <span className="chip chip-violet">Nightly</span>}
                     {recommended && (
                       <span className="chip chip-accent">
                         <Zap size={10} />
@@ -632,7 +655,7 @@ function AssetRow({
       </span>
       <div className="min-w-0 flex-1">
         <div className="flex flex-wrap items-center gap-1.5">
-          <span className="text-xs font-medium text-ink-100">
+          <span className="text-label font-medium text-ink-100">
             {backendLabel(asset.backend)}
           </span>
           <span className="chip">{asset.arch}</span>

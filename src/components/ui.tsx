@@ -78,7 +78,7 @@ export function Card({
   return (
     <section className={clsx("card overflow-hidden", className)}>
       {(title || actions) && (
-        <header className="flex items-start justify-between gap-4 border-b border-base-750 px-4 py-3">
+        <header className="flex items-start justify-between gap-4 border-b border-base-800 px-4 py-3">
           <div className="min-w-0">
             {title && (
               <h2 className="truncate text-title font-semibold tracking-tight text-ink-100">
@@ -86,7 +86,7 @@ export function Card({
               </h2>
             )}
             {subtitle && (
-              <p className="mt-0.5 text-xs leading-relaxed text-ink-400">{subtitle}</p>
+              <p className="mt-0.5 text-body leading-relaxed text-ink-400">{subtitle}</p>
             )}
           </div>
           {actions && <div className="flex shrink-0 items-center gap-2">{actions}</div>}
@@ -240,7 +240,7 @@ export function SliderField({
           disabled={disabled}
           onChange={(e) => onChange(Number(e.target.value))}
         />
-        <span className="mono w-16 shrink-0 text-right text-xs tabular-nums text-ink-200">
+        <span className="mono w-16 shrink-0 text-right text-label tabular-nums text-ink-200">
           {format ? format(value) : value}
         </span>
       </div>
@@ -276,9 +276,9 @@ export function Meter({
     <div>
       {(label || valueLabel) && (
         <div className="mb-1.5 flex items-baseline justify-between gap-3">
-          {label && <span className="text-xs text-ink-300">{label}</span>}
+          {label && <span className="text-label text-ink-300">{label}</span>}
           {valueLabel && (
-            <span className="mono text-xs tabular-nums text-ink-100">{valueLabel}</span>
+            <span className="mono text-label tabular-nums text-ink-100">{valueLabel}</span>
           )}
         </div>
       )}
@@ -321,7 +321,7 @@ export function EmptyState({
       <div>
         <p className="text-sm font-medium text-ink-200">{title}</p>
         {description && (
-          <p className="mx-auto mt-1 max-w-sm text-xs leading-relaxed text-ink-400">
+          <p className="mx-auto mt-1 max-w-sm text-body leading-relaxed text-ink-400">
             {description}
           </p>
         )}
@@ -374,9 +374,9 @@ export function Alert({
     >
       <Icon size={15} className={clsx("mt-0.5 shrink-0", t.text)} />
       <div className="min-w-0 flex-1">
-        {title && <p className={clsx("text-xs font-semibold", t.text)}>{title}</p>}
+        {title && <p className={clsx("text-body font-semibold", t.text)}>{title}</p>}
         {children && (
-          <div className="text-xs leading-relaxed text-ink-300 [&_code]:text-ink-100">
+          <div className="text-body leading-relaxed text-ink-300 [&_code]:text-ink-100">
             {children}
           </div>
         )}
@@ -384,7 +384,7 @@ export function Alert({
       {onClose && (
         <button
           onClick={onClose}
-          className="btn-quiet -m-1 cursor-pointer rounded p-1 text-ink-500 hover:text-ink-200"
+          className="btn-quiet -m-1 cursor-pointer rounded-control p-1 text-ink-500 hover:text-ink-200"
           aria-label="Cerrar"
         >
           <X size={13} />
@@ -446,12 +446,12 @@ export function ToastProvider({ children }: { children: ReactNode }) {
             ) : (
               <Info size={15} className="mt-0.5 shrink-0 text-ink-400" />
             )}
-            <span className="min-w-0 flex-1 text-xs leading-relaxed break-words">
+            <span className="min-w-0 flex-1 text-body leading-relaxed break-words">
               {t.message}
             </span>
             <button
               onClick={() => setToasts((all) => all.filter((x) => x.id !== t.id))}
-              className="btn-quiet -m-1 shrink-0 cursor-pointer rounded p-1 text-ink-500 hover:text-ink-200"
+              className="btn-quiet -m-1 shrink-0 cursor-pointer rounded-control p-1 text-ink-500 hover:text-ink-200"
               aria-label="Cerrar aviso"
             >
               <X size={13} />
@@ -513,7 +513,7 @@ export function ConfirmDialog({
         className="card animate-fade-up relative w-full max-w-md p-5 shadow-float"
       >
         <h3 className="text-sm font-semibold text-ink-100">{title}</h3>
-        <div className="mt-2 text-xs leading-relaxed text-ink-300">{message}</div>
+        <div className="mt-2 text-body leading-relaxed text-ink-300">{message}</div>
         <div className="mt-5 flex justify-end gap-2">
           <Button variant="quiet" onClick={onCancel}>
             Cancelar
@@ -539,13 +539,13 @@ export function StatusDot({
   label: ReactNode;
 }) {
   const colors = {
-    ok: "bg-accent-400",
+    ok: "bg-ok-400",
     warn: "bg-warn-400",
     danger: "bg-danger-400",
     idle: "bg-ink-500",
   };
   return (
-    <span className="inline-flex items-center gap-2 text-xs text-ink-300">
+    <span className="inline-flex items-center gap-2 text-label text-ink-300">
       <span className={clsx("h-1.5 w-1.5 rounded-full", colors[tone])} />
       {label}
     </span>
@@ -593,7 +593,7 @@ export function Section({
               </h2>
             )}
             {description && (
-              <p className="mt-1 text-xs leading-relaxed text-ink-400">{description}</p>
+              <p className="mt-1 text-body leading-relaxed text-ink-400">{description}</p>
             )}
           </div>
           {actions && <div className="flex shrink-0 items-center gap-2">{actions}</div>}
@@ -709,10 +709,10 @@ export function KeyValue({
 }) {
   return (
     <div className="flex items-baseline justify-between gap-4 py-1">
-      <dt className="shrink-0 text-xs text-ink-400">{label}</dt>
+      <dt className="shrink-0 text-label text-ink-400">{label}</dt>
       <dd
         className={clsx(
-          "min-w-0 truncate text-right text-xs",
+          "min-w-0 truncate text-right text-label",
           mono && "mono tabular-nums",
           tone === "accent" && "text-accent-400",
           tone === "warn" && "text-warn-400",

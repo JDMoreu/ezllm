@@ -66,7 +66,7 @@ export default function SettingsView({
   if (!config) {
     return (
       <Card>
-        <p className="py-6 text-center text-xs text-ink-400">Cargando ajustes…</p>
+        <p className="py-6 text-center text-body text-ink-400">Cargando ajustes…</p>
       </Card>
     );
   }
@@ -74,10 +74,10 @@ export default function SettingsView({
   const backend = BACKENDS.find((b) => b.value === config.preferredBackend);
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-4">
       <header>
         <h1 className="text-display font-semibold tracking-tight text-ink-100">Ajustes</h1>
-        <p className="mt-1 text-xs leading-relaxed text-ink-400">
+        <p className="mt-1 text-body leading-relaxed text-ink-400">
           Rutas, credenciales y preferencias de descarga. Todo se guarda en tu equipo.
         </p>
       </header>
@@ -143,7 +143,7 @@ export default function SettingsView({
           <div className="relative">
             <input
               type={showToken ? "text" : "password"}
-              className="field mono pr-10 text-xs"
+              className="field mono pr-10 text-body"
               placeholder="ghp_…"
               value={config.githubToken ?? ""}
               onChange={(e) =>
@@ -152,7 +152,7 @@ export default function SettingsView({
             />
             <button
               onClick={() => setShowToken((s) => !s)}
-              className="btn-quiet absolute top-1/2 right-1 -translate-y-1/2 cursor-pointer rounded p-1.5 text-ink-400 hover:text-ink-100"
+              className="btn-quiet absolute top-1/2 right-1 -translate-y-1/2 cursor-pointer rounded-control p-1.5 text-ink-400 hover:text-ink-100"
               title={showToken ? "Ocultar" : "Mostrar"}
               aria-label={showToken ? "Ocultar token" : "Mostrar token"}
             >
@@ -177,9 +177,9 @@ export default function SettingsView({
         }
       >
         {!hardware ? (
-          <p className="py-3 text-center text-xs text-ink-500">Leyendo el hardware…</p>
+          <p className="py-3 text-center text-body text-ink-500">Leyendo el hardware…</p>
         ) : (
-          <div className="space-y-3">
+          <div className="space-y-2">
             <div className="grid gap-3 sm:grid-cols-2">
               <Info label="Sistema" value={`${hardware.os} · ${hardware.arch}`} mono />
               <Info
@@ -201,10 +201,10 @@ export default function SettingsView({
             </div>
 
             {hardware.gpu.length > 0 && (
-              <div className="space-y-1.5 border-t border-base-800 pt-3">
+              <div className="space-y-1 border-t border-base-800 pt-3">
                 {hardware.gpu.map((g, i) => (
                   <div key={i} className="flex items-center justify-between gap-3">
-                    <span className="min-w-0 truncate text-xs text-ink-200">{g.name}</span>
+                    <span className="min-w-0 truncate text-label text-ink-200">{g.name}</span>
                     <span className="mono shrink-0 text-label text-ink-500">
                       {g.vramTotalMib > 0
                         ? `${formatBytes(g.vramTotalMib * 1024 * 1024)} VRAM`
@@ -237,7 +237,7 @@ export default function SettingsView({
       <Card title="Restablecer">
         <div className="flex items-start justify-between gap-4">
           <div className="min-w-0">
-            <p className="text-xs font-medium text-ink-100">Borrar la configuración</p>
+            <p className="text-label font-medium text-ink-100">Borrar la configuración</p>
             <p className="mt-1 text-label leading-relaxed text-ink-500">
               Devuelve todos los ajustes a sus valores por defecto. No borra los modelos ni las
               versiones instaladas de llama.cpp.
@@ -299,7 +299,7 @@ function FolderRow({
       <Field label={label} hint={hint}>
         <div className="flex gap-2">
           <input
-            className="field mono flex-1 text-xs"
+            className="field mono flex-1 text-body"
             value={value ?? ""}
             placeholder="Sin asignar"
             readOnly
@@ -327,7 +327,7 @@ function Info({ label, value, mono }: { label: string; value: string; mono?: boo
   return (
     <div className="rounded-card bg-base-850 px-3 py-2">
       <p className="text-label font-medium tracking-wide text-ink-500 uppercase">{label}</p>
-      <p className={mono ? "mono mt-0.5 text-xs text-ink-100" : "mt-0.5 text-xs text-ink-100"}>
+      <p className={mono ? "mono mt-0.5 text-label text-ink-100" : "mt-0.5 text-label text-ink-100"}>
         {value}
       </p>
     </div>
