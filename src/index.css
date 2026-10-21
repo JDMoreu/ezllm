@@ -65,6 +65,7 @@
   --color-ink-300: #bcc5d4; /* secundario */
   --color-ink-400: #8f9bad; /* etiquetas, metadatos */
   --color-ink-500: #6f7b8d; /* solo 14px+ o decorativo */
+  --color-ink-600: #4c5566; /* separadores */
 
   /* --- Acento: la acción en curso -----------------------------------
      Azul-violeta (hue 232). El verde queda LIBRE para "sano": si la app
@@ -107,10 +108,13 @@
   --tracking-tight: -0.01em;
   --tracking-wide: 0.06em;
 
-  /* --- Radios ------------------------------------------------------- */
-  --radius-card: 10px;
-  --radius-panel: 12px;
-  --radius-control: 7px;
+  /* --- Radios -------------------------------------------------------
+     Nombres propios para que el radio de un control, una tarjeta y un
+     panel se elijan de los tokens y no del valor por defecto de Tailwind
+     (6/8/12px), que no coincide con nada. */
+  --radius-control: 7px; /* input, boton, chip */
+  --radius-card: 10px; /* tarjeta, seccion */
+  --radius-panel: 12px; /* modal, overlay */
 
   /* --- Sombras ------------------------------------------------------ */
   --shadow-panel: 0 1px 2px rgb(0 0 0 / 0.28);

@@ -310,7 +310,7 @@ function FolderRow({
           {onClear && (
             <button
               onClick={onClear}
-              className="btn-quiet cursor-pointer rounded-lg px-2 text-ink-500 hover:text-danger-400"
+              className="btn-quiet cursor-pointer rounded-card px-2 text-ink-500 hover:text-danger-400"
               aria-label={`Quitar ${label}`}
               title="Quitar"
             >
@@ -325,7 +325,7 @@ function FolderRow({
 
 function Info({ label, value, mono }: { label: string; value: string; mono?: boolean }) {
   return (
-    <div className="rounded-lg bg-base-850 px-3 py-2">
+    <div className="rounded-card bg-base-850 px-3 py-2">
       <p className="text-label font-medium tracking-wide text-ink-500 uppercase">{label}</p>
       <p className={mono ? "mono mt-0.5 text-xs text-ink-100" : "mt-0.5 text-xs text-ink-100"}>
         {value}

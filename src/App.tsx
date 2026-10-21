@@ -210,7 +210,7 @@ function Shell() {
       <aside className="app-sidebar flex w-[13.5rem] shrink-0 flex-col border-r border-base-800 bg-base-950">
         {/* Marca */}
         <div className="flex h-12 shrink-0 items-center gap-2.5 border-b border-base-800 px-4">
-          <span className="flex h-6 w-6 items-center justify-center rounded-md bg-accent-500/15 text-accent-400">
+          <span className="flex h-6 w-6 items-center justify-center rounded-control bg-accent-500/15 text-accent-400">
             <Zap size={13} />
           </span>
           <span className="app-sidebar-label text-[0.8125rem] font-semibold tracking-tight text-ink-100">
@@ -229,7 +229,7 @@ function Shell() {
                 onClick={() => setView(item.id)}
                 title={item.hint}
                 className={clsx(
-                  "app-sidebar-btn group flex w-full cursor-pointer items-center gap-2.5 rounded-md px-2.5 py-2 text-left text-xs font-medium transition-colors duration-150",
+                  "app-sidebar-btn group flex w-full cursor-pointer items-center gap-2.5 rounded-control px-2.5 py-2 text-left text-xs font-medium transition-colors duration-150",
                   active
                     ? "bg-base-850 text-ink-100"
                     : "text-ink-400 hover:bg-base-900 hover:text-ink-200",
@@ -287,7 +287,7 @@ function Shell() {
             onClick={server?.running ? handleStop : handleStart}
             disabled={busy}
             className={clsx(
-              "flex w-full cursor-pointer items-center justify-center gap-2 rounded-md px-3 py-2 text-xs font-semibold transition-colors duration-150",
+              "flex w-full cursor-pointer items-center justify-center gap-2 rounded-control px-3 py-2 text-xs font-semibold transition-colors duration-150",
               server?.running
                 ? "bg-danger-500/15 text-danger-400 hover:bg-danger-500/25"
                 : "bg-accent-500 text-[#08091c] hover:bg-accent-400",

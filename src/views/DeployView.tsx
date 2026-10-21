@@ -361,7 +361,7 @@ export default function DeployView({
         <div className="flex items-center gap-2">
           {deployments.length > 0 && (
             <select
-              className="field w-auto py-1 text-xs"
+              className="field w-auto py-1 text-label"
               value={activeId ?? ""}
               onChange={(e) => {
                 const d = deployments.find((x) => x.id === e.target.value);
@@ -391,6 +391,53 @@ export default function DeployView({
       <div className="grid gap-4 2xl:grid-cols-[minmax(0,1fr)_19rem]">
         {/* ==================== COLUMNA PRINCIPAL ==================== */}
         <div className="space-y-4">
+          {/* ---------- EL DESPLIEGUE, EN UNA LINEA ---------- */}
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 rounded-card border border-base-800 bg-base-900 px-3.5 py-2.5 text-label">
+            <span className="text-meta tracking-wide text-ink-400 uppercase">
+              Este despliegue
+            </span>
+            <span className="flex items-center gap-1.5">
+              <Layers size={12} className="text-accent-400" />
+              <span className="font-medium text-ink-100">
+                {selectedModel ? basename(selectedModel) : "Sin modelo"}
+              </span>
+            </span>
+            {selectedMmproj && (
+              <span className="flex items-center gap-1.5 text-ink-300">
+                <Video size={12} className="text-violet-400" />
+                {basename(selectedMmproj)}
+              </span>
+            )}
+            {selectedDraft && (
+              <span className="flex items-center gap-1.5 text-ink-300">
+                <Zap size={12} className="text-info-400" />
+                {basename(selectedDraft)}
+              </span>
+            )}
+            <span aria-hidden className="text-ink-600">
+              ·
+            </span>
+            <span className="text-ink-300">
+              ctx{" "}
+              <span className="mono text-ink-100">
+                {sc.ctxSize.toLocaleString("es-ES")}
+              </span>
+            </span>
+            <span className="text-ink-300">
+              {sc.nParallel} {sc.nParallel === 1 ? "slot" : "slots"}
+            </span>
+            <span className="text-ink-300">
+              GPU{" "}
+              <span className="mono text-ink-100">{sc.device ?? "auto"}</span>
+            </span>
+            {estimate && (
+              <span className="text-ink-300">
+                <span className="mono text-ink-100">{formatGb(estimate.totalGb)}</span>{" "}
+                en memoria
+              </span>
+            )}
+          </div>
+
           {/* ---------- MODELO ---------- */}
           <Section
             title="Modelo"
@@ -469,7 +516,7 @@ export default function DeployView({
                               onSelect(selectedModel, e.path, selectedDraft);
                             else onSelect(selectedModel, selectedMmproj, e.path);
                           }}
-                          className="flex w-full cursor-pointer items-center gap-2.5 rounded-md px-2 py-1.5 text-left transition-colors duration-150 hover:bg-base-850"
+                          className="flex w-full cursor-pointer items-center gap-2.5 rounded-control px-2 py-1.5 text-left transition-colors duration-150 hover:bg-base-850"
                         >
                           <span
                             className={clsx(
@@ -605,7 +652,7 @@ export default function DeployView({
                           });
                         }}
                         className={clsx(
-                          "flex w-full cursor-pointer items-center gap-2.5 rounded-lg border px-2.5 py-2 text-left transition-colors duration-150",
+                          "flex w-full cursor-pointer items-center gap-2.5 rounded-card border px-2.5 py-2 text-left transition-colors duration-150",
                           on
                             ? "border-accent-500/45 bg-accent-500/10"
                             : "border-base-800 bg-base-950 hover:border-base-700",
@@ -928,7 +975,7 @@ export default function DeployView({
             {flags.length === 0 ? (
               <p className="py-3 text-center text-xs text-ink-400">Sin flags.</p>
             ) : (
-              <div className="mono max-h-52 overflow-y-auto rounded-md bg-base-950 p-2.5 text-label leading-relaxed break-all text-ink-300">
+              <div className="mono max-h-52 overflow-y-auto rounded-control bg-base-950 p-2.5 text-label leading-relaxed break-all text-ink-300">
                 {flags.map((f, i) => (
                   <span key={i}>
                     <span className="text-accent-400">{f}</span>
@@ -977,7 +1024,7 @@ export default function DeployView({
           {/* ---------- REGISTRO ---------- */}
           {server?.running && (
             <Section title="Registro" description={server.logFile ?? undefined}>
-              <pre className="mono max-h-48 overflow-auto rounded-md bg-base-950 p-2.5 text-label leading-relaxed text-ink-400">
+              <pre className="mono max-h-48 overflow-auto rounded-control bg-base-950 p-2.5 text-label leading-relaxed text-ink-400">
                 {log || "Sin líneas todavía."}
               </pre>
             </Section>
@@ -1039,7 +1086,7 @@ function ModelSlot({
     <div className="flex items-start gap-2.5">
       <span
         className={clsx(
-          "mt-6 flex h-7 w-7 shrink-0 items-center justify-center rounded-md",
+          "mt-6 flex h-7 w-7 shrink-0 items-center justify-center rounded-control",
           tone,
         )}
       >
@@ -1057,7 +1104,7 @@ function ModelSlot({
           />
           <button
             onClick={onPick}
-            className="btn-quiet flex shrink-0 cursor-pointer items-center gap-1.5 rounded-md border border-base-700 px-2 text-ink-300 transition-colors duration-150 hover:border-accent-500/50 hover:text-ink-100"
+            className="btn-quiet flex shrink-0 cursor-pointer items-center gap-1.5 rounded-control border border-base-700 px-2 text-ink-300 transition-colors duration-150 hover:border-accent-500/50 hover:text-ink-100"
             title="Buscar en el explorador"
             aria-label={`Buscar ${label}`}
           >
@@ -1066,7 +1113,7 @@ function ModelSlot({
           {value && (
             <button
               onClick={onClear}
-              className="btn-quiet flex shrink-0 cursor-pointer items-center rounded-md border border-base-700 px-2 text-ink-400 transition-colors duration-150 hover:border-danger-500/50 hover:text-danger-400"
+              className="btn-quiet flex shrink-0 cursor-pointer items-center rounded-control border border-base-700 px-2 text-ink-400 transition-colors duration-150 hover:border-danger-500/50 hover:text-danger-400"
               aria-label={`Quitar ${label}`}
               title="Quitar"
             >

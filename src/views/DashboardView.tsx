@@ -177,7 +177,7 @@ export default function DashboardView({
                 return (
                   <div key={i} className={clsxJoin(i > 0 && "border-t border-base-800 pt-4")}>
                     <div className="mb-2 flex items-center gap-2.5">
-                      <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-accent-500/12 text-accent-400">
+                      <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-control bg-accent-500/12 text-accent-400">
                         <Zap size={13} />
                       </span>
                       <div className="min-w-0 flex-1">
@@ -239,7 +239,7 @@ export default function DashboardView({
         >
           <div className="space-y-4">
             <div className="flex items-center gap-2.5">
-              <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-info-500/12 text-info-400">
+              <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-control bg-info-500/12 text-info-400">
                 <Cpu size={13} />
               </span>
               <div className="min-w-0 flex-1">
@@ -327,9 +327,9 @@ export default function DashboardView({
               <li key={d.id}>
                 <button
                   onClick={() => applyDeployment(d)}
-                  className="flex w-full cursor-pointer items-center gap-2.5 rounded-lg border border-base-800 bg-base-950 px-3 py-2.5 text-left transition-colors duration-150 hover:border-accent-500/40 hover:bg-base-850"
+                  className="flex w-full cursor-pointer items-center gap-2.5 rounded-card border border-base-800 bg-base-950 px-3 py-2.5 text-left transition-colors duration-150 hover:border-accent-500/40 hover:bg-base-850"
                 >
-                  <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-accent-500/12 text-accent-400">
+                  <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-control bg-accent-500/12 text-accent-400">
                     <Play size={12} />
                   </span>
                   <span className="min-w-0 flex-1">
@@ -361,7 +361,7 @@ export default function DashboardView({
           }
         >
           <div className="flex flex-col items-center gap-3 py-6 text-center">
-            <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-base-850 text-ink-400">
+            <span className="flex h-9 w-9 items-center justify-center rounded-card bg-base-850 text-ink-400">
               <Activity size={16} />
             </span>
             <p className="max-w-sm text-xs leading-relaxed text-ink-400">

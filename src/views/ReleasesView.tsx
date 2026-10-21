@@ -179,7 +179,7 @@ export default function ReleasesView({
         </div>
         <div className="flex items-center gap-2">
           <div
-            className="flex gap-0.5 rounded-lg bg-base-850 p-0.5"
+            className="flex gap-0.5 rounded-card bg-base-850 p-0.5"
             role="tablist"
             aria-label="Canal de versión"
           >
@@ -196,7 +196,7 @@ export default function ReleasesView({
                 onClick={() => setChannel(id)}
                 title={hint}
                 className={clsx(
-                  "cursor-pointer rounded-md px-2.5 py-1 text-xs font-medium transition-colors duration-150",
+                  "cursor-pointer rounded-control px-2.5 py-1 text-xs font-medium transition-colors duration-150",
                   channel === id
                     ? "bg-base-800 text-ink-100 shadow-[inset_0_1px_0_0_rgb(255_255_255/0.04)]"
                     : "text-ink-400 hover:text-ink-200",
@@ -256,7 +256,7 @@ export default function ReleasesView({
               <li key={b.tag} className="flex items-center gap-3 py-2.5 first:pt-0 last:pb-0">
                 <span
                   className={clsx(
-                    "flex h-7 w-7 shrink-0 items-center justify-center rounded-lg",
+                    "flex h-7 w-7 shrink-0 items-center justify-center rounded-card",
                     i === 0 ? "bg-accent-600/15 text-accent-400" : "bg-base-800 text-ink-400",
                   )}
                 >
@@ -271,7 +271,7 @@ export default function ReleasesView({
                 {i === 0 && <span className="chip chip-accent">En uso</span>}
                 <button
                   onClick={() => setPendingDelete(b.tag)}
-                  className="btn-quiet cursor-pointer rounded-lg p-1.5 text-ink-500 hover:text-danger-400"
+                  className="btn-quiet cursor-pointer rounded-card p-1.5 text-ink-500 hover:text-danger-400"
                   aria-label={`Eliminar ${b.tag}`}
                 >
                   <Trash2 size={14} />
@@ -406,7 +406,7 @@ export default function ReleasesView({
                       >
                         <span
                           className={clsx(
-                            "flex h-7 w-7 shrink-0 items-center justify-center rounded-md",
+                            "flex h-7 w-7 shrink-0 items-center justify-center rounded-control",
                             asset.name === s.recommended
                               ? "bg-accent-500/14 text-accent-400"
                               : "bg-base-850 text-ink-400",
@@ -624,7 +624,7 @@ function AssetRow({
     <li className="flex items-center gap-3 px-4 py-2.5">
       <span
         className={clsx(
-          "flex h-7 w-7 shrink-0 items-center justify-center rounded-lg",
+          "flex h-7 w-7 shrink-0 items-center justify-center rounded-card",
           recommended ? "bg-accent-600/15 text-accent-400" : "bg-base-800 text-ink-400",
         )}
       >

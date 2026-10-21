@@ -41,7 +41,10 @@ export function Button({
         variant === "ghost" && "btn-ghost",
         variant === "danger" && "btn-danger",
         variant === "quiet" && "btn-quiet",
-        size === "sm" && "px-2.5 py-1 text-xs",
+        // La version pequena mantiene la altura del base y solo reduce el
+        // padding horizontal y el cuerpo: dos botones hermanos deben
+        // alinearse.
+        size === "sm" && "px-2.5 py-[0.4rem] text-label",
         className,
       )}
       disabled={disabled || loading}
@@ -311,7 +314,7 @@ export function EmptyState({
   return (
     <div className="flex flex-col items-center justify-center gap-3 px-6 py-12 text-center">
       {icon && (
-        <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-base-800 text-ink-400">
+        <div className="flex h-11 w-11 items-center justify-center rounded-panel bg-base-800 text-ink-400">
           {icon}
         </div>
       )}
@@ -363,7 +366,7 @@ export function Alert({
   return (
     <div
       className={clsx(
-        "flex items-start gap-2.5 rounded-lg border px-3 py-2.5",
+        "flex items-start gap-2.5 rounded-card border px-3 py-2.5",
         t.border,
         t.bg,
       )}
@@ -427,7 +430,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
           <div
             key={t.id}
             className={clsx(
-              "animate-fade-up pointer-events-auto flex items-start gap-2.5 rounded-lg border px-3 py-2.5 shadow-float backdrop-blur",
+              "animate-fade-up pointer-events-auto flex items-start gap-2.5 rounded-card border px-3 py-2.5 shadow-float backdrop-blur",
               t.tone === "danger"
                 ? "border-danger-500/40 bg-base-900/95 text-danger-400"
                 : t.tone === "success"
