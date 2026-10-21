@@ -21,6 +21,7 @@ import {
   ConfirmDialog,
   EmptyState,
   Meter,
+  Section,
   useToast,
 } from "../components/ui";
 import {
@@ -33,6 +34,7 @@ import type {
   AppConfig,
   BinaryAsset,
   DownloadProgress,
+  HardwareReport,
   InstalledBuild,
   ReleaseView,
   StableRelease,
@@ -40,9 +42,11 @@ import type {
 
 export default function ReleasesView({
   config,
+  hardware,
   onConfigChange,
 }: {
   config: AppConfig | null;
+  hardware: HardwareReport | null;
   onConfigChange: (c: AppConfig) => void;
 }) {
   const toast = useToast();
@@ -56,7 +60,7 @@ export default function ReleasesView({
   const [pendingDelete, setPendingDelete] = useState<string | null>(null);
   const [channel, setChannel] = useState<"nightly" | "stable">("nightly");
   const [stable, setStable] = useState<StableRelease[]>([]);
-  const [stableTag, setStableTag] = useState<string | null>(null);
+  const [loadingStable, setLoadingStable] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -83,15 +87,18 @@ export default function ReleasesView({
   useEffect(() => {
     if (channel !== "stable") return;
     let alive = true;
+    setLoadingStable(true);
     api
-      .listStableReleases(12)
+      .listStableReleases(8)
       .then((s) => {
         if (!alive) return;
         setStable(s);
-        setStableTag((prev) => prev ?? s[0]?.nightlyTag ?? null);
       })
       .catch(() => {
         if (alive) setStable([]);
+      })
+      .finally(() => {
+        if (alive) setLoadingStable(false);
       });
     return () => {
       alive = false;
@@ -147,6 +154,7 @@ export default function ReleasesView({
   );
 
   const backendFilter = config?.preferredBackend ?? "auto";
+  const gpuNames = (hardware?.gpu ?? []).map((g) => g.name);
 
   const filteredReleases = useMemo(() => {
     if (backendFilter === "auto") return releases;
@@ -158,32 +166,39 @@ export default function ReleasesView({
 
   return (
     <div className="space-y-5">
-      <header className="flex flex-wrap items-start justify-between gap-4">
+      <header className="flex flex-wrap items-end justify-between gap-4">
         <div>
           <h1 className="text-lg font-semibold tracking-tight text-ink-100">
-            Instalar llama.cpp
+            llama.cpp
           </h1>
           <p className="mt-1 max-w-2xl text-xs leading-relaxed text-ink-400">
-            Descarga los binarios oficiales del repositorio{" "}
-            <span className="mono text-ink-300">ggml-org/llama.cpp</span>. Cada paquete se
-            verifica con el hash SHA-256 que publica GitHub antes de instalarse.
+            Binarios oficiales de{" "}
+            <span className="mono text-ink-300">ggml-org/llama.cpp</span>, verificados
+            con el hash SHA-256 que publica GitHub antes de instalarse.
           </p>
         </div>
         <div className="flex items-center gap-2">
-          <div className="flex gap-1 rounded-lg bg-base-850 p-0.5">
+          <div
+            className="flex gap-0.5 rounded-lg bg-base-850 p-0.5"
+            role="tablist"
+            aria-label="Canal de versión"
+          >
             {(
               [
-                ["nightly", "Nightly"],
-                ["stable", "Estables"],
+                ["nightly", "Nightly", "La última build de desarrollo"],
+                ["stable", "Estable", "Última versión con etiqueta vX.Y.Z"],
               ] as const
-            ).map(([id, label]) => (
+            ).map(([id, label, hint]) => (
               <button
                 key={id}
+                role="tab"
+                aria-selected={channel === id}
                 onClick={() => setChannel(id)}
+                title={hint}
                 className={clsx(
-                  "cursor-pointer rounded-md px-2.5 py-1 text-[0.6875rem] font-medium transition-colors duration-200",
+                  "cursor-pointer rounded-md px-2.5 py-1 text-xs font-medium transition-colors duration-150",
                   channel === id
-                    ? "bg-base-700 text-ink-100"
+                    ? "bg-base-800 text-ink-100 shadow-[inset_0_1px_0_0_rgb(255_255_255/0.04)]"
                     : "text-ink-400 hover:text-ink-200",
                 )}
               >
@@ -191,7 +206,12 @@ export default function ReleasesView({
               </button>
             ))}
           </div>
-          <Button icon={<RefreshCw size={14} />} onClick={load} loading={loading}>
+          <Button
+            icon={<RefreshCw size={13} />}
+            onClick={load}
+            loading={loading}
+            variant="ghost"
+          >
             Actualizar
           </Button>
         </div>
@@ -244,7 +264,7 @@ export default function ReleasesView({
                 </span>
                 <div className="min-w-0 flex-1">
                   <p className="mono text-xs font-medium text-ink-100">{b.tag}</p>
-                  <p className="truncate text-[0.6875rem] text-ink-500" title={b.dir}>
+                  <p className="truncate text-[0.75rem] text-ink-500" title={b.dir}>
                     {b.dir}
                   </p>
                 </div>
@@ -262,10 +282,10 @@ export default function ReleasesView({
         )}
       </Card>
 
-      {/* --- Backend preferido --- */}
-      <Card
-        title="Backend preferido"
-        subtitle="Qué paquete se descarga y se recomienda por defecto."
+      {/* --- Recomendación para este equipo --- */}
+      <Section
+        title="Para este equipo"
+        description="Qué paquete encaja con tu hardware y por qué."
         actions={
           <select
             className="field w-auto py-1 text-xs"
@@ -277,6 +297,7 @@ export default function ReleasesView({
                 preferredBackend: e.target.value as AppConfig["preferredBackend"],
               })
             }
+            aria-label="Backend preferido"
           >
             <option value="auto">Automático</option>
             <option value="vulkan">Vulkan</option>
@@ -286,12 +307,17 @@ export default function ReleasesView({
           </select>
         }
       >
-        <p className="text-[0.6875rem] leading-relaxed text-ink-400">
+        <p className="text-xs leading-relaxed text-ink-300">
           {backendFilter === "auto"
-            ? "Automático prefiere Vulkan, que funciona en la mayoría de GPUs de escritorio sin instalar nada extra."
+            ? "Vulkan es la opción por defecto: funciona con la mayoría de GPUs de escritorio sin instalar drivers extra."
             : `Solo se ofrecerán los paquetes de ${backendFilter.toUpperCase()}.`}
         </p>
-      </Card>
+        {gpuNames.length > 0 && (
+          <p className="mt-2 border-t border-base-800 pt-2 text-[0.75rem] text-ink-400">
+            Detectado: {gpuNames.join(", ")}
+          </p>
+        )}
+      </Section>
 
       {/* --- Progreso de descarga --- */}
       {progress && (
@@ -303,7 +329,7 @@ export default function ReleasesView({
               label={<span className="capitalize">{progress.phase}</span>}
               valueLabel={`${progress.percent.toFixed(0)}%`}
             />
-            <div className="flex justify-between text-[0.6875rem] text-ink-500">
+            <div className="flex justify-between text-[0.75rem] text-ink-500">
               <span className="mono">
                 {formatBytes(progress.downloaded)} / {formatBytes(progress.total)}
               </span>
@@ -315,66 +341,124 @@ export default function ReleasesView({
 
       {/* --- Releases estables --- */}
       {channel === "stable" && (
-        <div className="space-y-2.5">
-          {stable.length === 0 && (
-            <Card>
-              <p className="py-6 text-center text-xs text-ink-400">
-                Consultando las releases estables…
+        <div className="space-y-3">
+          <Alert tone="info" title="Cómo funcionan las versiones estables">
+            Las releases con etiqueta <span className="mono">vX.Y.Z</span> no
+            publican binarios: publican un puntero{" "}
+            <span className="mono">nightly-tag.txt</span> con la build exacta
+            <span className="mono"> b#####</span> de ese mismo commit. EzLlamaCpp
+            resuelve ese puntero y te muestra los paquetes reales para que
+            puedas instalarlos aquí mismo.
+          </Alert>
+
+          {stable.length === 0 && !loadingStable && (
+            <Section title="Sin versiones estables">
+              <p className="py-4 text-center text-xs text-ink-400">
+                No se encontraron releases estables.
               </p>
-            </Card>
+            </Section>
           )}
+
+          {loadingStable && stable.length === 0 && (
+            <Section title="Consultando">
+              <div className="space-y-2 py-2">
+                {[0, 1, 2].map((i) => (
+                  <div key={i} className="skeleton h-14 w-full" />
+                ))}
+              </div>
+            </Section>
+          )}
+
           {stable.map((s) => (
-            <section
+            <Section
               key={s.tag}
-              className={clsx(
-                "card overflow-hidden transition-colors duration-200",
-                s.nightlyTag === stableTag && "border-accent-500/45",
-              )}
-            >
-              <button
-                onClick={() => setStableTag(s.nightlyTag)}
-                className="flex w-full cursor-pointer items-center gap-3 px-4 py-3 text-left transition-colors duration-200 hover:bg-base-850"
-                aria-pressed={s.nightlyTag === stableTag}
-              >
-                <span
-                  className={clsx(
-                    "flex h-5 w-5 shrink-0 items-center justify-center rounded-full border",
-                    s.nightlyTag === stableTag
-                      ? "border-accent-500 bg-accent-500"
-                      : "border-base-600",
-                  )}
-                >
-                  {s.nightlyTag === stableTag && (
-                    <svg width="10" height="10" viewBox="0 0 24 24" fill="none">
-                      <path
-                        d="m5 13 4 4L19 7"
-                        stroke="#04150e"
-                        strokeWidth="3.5"
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                      />
-                    </svg>
+              title={
+                <span className="flex items-center gap-2">
+                  <span className="mono">{s.tag}</span>
+                  <span className="chip chip-ok">Estable</span>
+                </span>
+              }
+              description={
+                <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                  <span>{formatDate(s.publishedAt)}</span>
+                  {s.nightlyTag && (
+                    <>
+                      <span aria-hidden>·</span>
+                      <span className="mono text-ink-300">{s.nightlyTag}</span>
+                      <span className="chip">build equivalente</span>
+                    </>
                   )}
                 </span>
-                <div className="min-w-0 flex-1">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <span className="mono text-[0.8125rem] font-semibold text-ink-100">
-                      {s.tag}
-                    </span>
-                    <span className="chip chip-accent">Estable</span>
-                    {s.nightlyTag && (
-                      <span className="mono chip" title="Tag con los binarios">
-                        {s.nightlyTag}
-                      </span>
-                    )}
-                  </div>
-                  <p className="mt-0.5 text-[0.6875rem] text-ink-500">
-                    {formatDate(s.publishedAt)} · las releases estables no
-                    publican binarios: se instala el build {s.nightlyTag ?? "nightly"}
-                  </p>
-                </div>
-              </button>
-            </section>
+              }
+            >
+              {s.unavailableReason ? (
+                <Alert tone="warn" title="No hay paquetes para este equipo">
+                  {s.unavailableReason}
+                </Alert>
+              ) : (
+                <ul className="-mx-1">
+                  {s.assets
+                    .filter((a) => a.compatible && !a.isCudart)
+                    .map((asset) => (
+                      <li
+                        key={asset.name}
+                        className="row flex items-center gap-3 px-1 py-2"
+                      >
+                        <span
+                          className={clsx(
+                            "flex h-7 w-7 shrink-0 items-center justify-center rounded-md",
+                            asset.name === s.recommended
+                              ? "bg-accent-500/14 text-accent-400"
+                              : "bg-base-850 text-ink-400",
+                          )}
+                        >
+                          <Cpu size={13} />
+                        </span>
+                        <div className="min-w-0 flex-1">
+                          <div className="flex flex-wrap items-center gap-1.5">
+                            <span className="text-xs font-medium text-ink-100">
+                              {backendLabel(asset.backend)}
+                            </span>
+                            {asset.name === s.recommended && (
+                              <span className="chip chip-accent">
+                                <Zap size={9} />
+                                Recomendado
+                              </span>
+                            )}
+                            {asset.sha256 && (
+                              <span
+                                className="chip chip-ok"
+                                title={`SHA-256: ${asset.sha256}`}
+                              >
+                                <CheckCircle2 size={9} />
+                                Verificado
+                              </span>
+                            )}
+                          </div>
+                          <p
+                            className="mono mt-0.5 truncate text-[0.75rem] text-ink-500"
+                            title={asset.name}
+                          >
+                            {asset.name}
+                          </p>
+                        </div>
+                        <span className="mono shrink-0 text-[0.75rem] text-ink-400">
+                          {formatBytes(asset.size)}
+                        </span>
+                        <Button
+                          size="sm"
+                          variant={asset.name === s.recommended ? "primary" : "ghost"}
+                          icon={<Download size={12} />}
+                          loading={installing === asset.name}
+                          onClick={() => install(s.nightlyTag ?? s.tag, asset)}
+                        >
+                          Instalar
+                        </Button>
+                      </li>
+                    ))}
+                </ul>
+              )}
+            </Section>
           ))}
         </div>
       )}
@@ -432,7 +516,7 @@ export default function ReleasesView({
                       </span>
                     )}
                   </div>
-                  <p className="mt-0.5 text-[0.6875rem] text-ink-500">
+                  <p className="mt-0.5 text-[0.75rem] text-ink-500">
                     {formatDate(rel.publishedAt)} ·{" "}
                     {rel.assets.filter((a) => !a.isCudart).length} paquetes
                   </p>
@@ -443,7 +527,7 @@ export default function ReleasesView({
                     target="_blank"
                     rel="noreferrer"
                     onClick={(e) => e.stopPropagation()}
-                    className="btn btn-quiet px-2 py-1 text-[0.6875rem]"
+                    className="btn btn-quiet px-2 py-1 text-[0.75rem]"
                     title="Abrir en GitHub"
                   >
                     <ExternalLink size={12} />
@@ -563,11 +647,11 @@ function AssetRow({
             </span>
           )}
         </div>
-        <p className="mono mt-0.5 truncate text-[0.6875rem] text-ink-500" title={asset.name}>
+        <p className="mono mt-0.5 truncate text-[0.75rem] text-ink-500" title={asset.name}>
           {asset.name}
         </p>
       </div>
-      <span className="mono shrink-0 text-[0.6875rem] text-ink-400">
+      <span className="mono shrink-0 text-[0.75rem] text-ink-400">
         {formatBytes(asset.size)}
       </span>
       <Button

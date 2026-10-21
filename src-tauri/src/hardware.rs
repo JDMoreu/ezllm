@@ -112,6 +112,11 @@ pub fn parse_list_devices(out: &str) -> Vec<GpuDevice> {
 }
 
 /// Mapa nombre de GPU -> discrete/integrated, leído de `vulkaninfo --summary`.
+pub fn detect_device_kinds() -> Vec<(String, String)> {
+    device_types_vulkan()
+}
+
+/// Mapa nombre de GPU -> discrete/integrated, leído de `vulkaninfo --summary`.
 fn device_types_vulkan() -> Vec<(String, String)> {
     let out = run("vulkaninfo", &["--summary"], Duration::from_secs(20));
     if out.is_empty() {

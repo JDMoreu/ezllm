@@ -106,7 +106,25 @@ pub async fn list_releases(
     token: Option<&str>,
     per_page: u32,
 ) -> Result<Vec<GitHubRelease>, String> {
-    let url = format!("{API_BASE}/releases?per_page={}", per_page.clamp(1, 100));
+    list_releases_page(client, token, per_page, 1).await
+}
+
+/// Una pagina concreta del feed de releases.
+///
+/// La paginacion es necesaria: el feed mezcla `b#####` (nightly, ~6 al dia)
+/// con `vX.Y.Z` (estable, ~1 cada varias semanas). Con una sola pagina de 30
+/// no cabe ni una estable.
+pub async fn list_releases_page(
+    client: &reqwest::Client,
+    token: Option<&str>,
+    per_page: u32,
+    page: u32,
+) -> Result<Vec<GitHubRelease>, String> {
+    let url = format!(
+        "{API_BASE}/releases?per_page={}&page={}",
+        per_page.clamp(1, 100),
+        page.max(1)
+    );
     fetch_json::<Vec<GitHubRelease>>(client, &url, token).await
 }
 

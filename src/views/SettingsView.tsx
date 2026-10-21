@@ -205,7 +205,7 @@ export default function SettingsView({
                 {hardware.gpu.map((g, i) => (
                   <div key={i} className="flex items-center justify-between gap-3">
                     <span className="min-w-0 truncate text-xs text-ink-200">{g.name}</span>
-                    <span className="mono shrink-0 text-[0.6875rem] text-ink-500">
+                    <span className="mono shrink-0 text-[0.75rem] text-ink-500">
                       {g.vramTotalMib > 0
                         ? `${formatBytes(g.vramTotalMib * 1024 * 1024)} VRAM`
                         : g.api}
@@ -238,7 +238,7 @@ export default function SettingsView({
         <div className="flex items-start justify-between gap-4">
           <div className="min-w-0">
             <p className="text-xs font-medium text-ink-100">Borrar la configuración</p>
-            <p className="mt-1 text-[0.6875rem] leading-relaxed text-ink-500">
+            <p className="mt-1 text-[0.75rem] leading-relaxed text-ink-500">
               Devuelve todos los ajustes a sus valores por defecto. No borra los modelos ni las
               versiones instaladas de llama.cpp.
             </p>
@@ -326,7 +326,7 @@ function FolderRow({
 function Info({ label, value, mono }: { label: string; value: string; mono?: boolean }) {
   return (
     <div className="rounded-lg bg-base-850 px-3 py-2">
-      <p className="text-[0.6875rem] font-medium tracking-wide text-ink-500 uppercase">{label}</p>
+      <p className="text-[0.75rem] font-medium tracking-wide text-ink-500 uppercase">{label}</p>
       <p className={mono ? "mono mt-0.5 text-xs text-ink-100" : "mt-0.5 text-xs text-ink-100"}>
         {value}
       </p>

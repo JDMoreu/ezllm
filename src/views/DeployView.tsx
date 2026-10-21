@@ -4,10 +4,8 @@ import {
   Copy,
   FolderOpen,
   Layers,
-  Play,
   Save,
   Search,
-  Square,
   Trash2,
   Video,
   Zap,
@@ -17,14 +15,16 @@ import { open } from "@tauri-apps/plugin-dialog";
 import { api } from "../lib/api";
 import {
   Button,
-  Card,
   ConfirmDialog,
   Field,
-  Meter,
+  KeyValue,
   NumberField,
+  PromptDialog,
+  Section,
   SelectField,
   useToast,
 } from "../components/ui";
+import { LiveMeter } from "../components/Telemetry";
 import { basename, formatBytes, formatGb, formatNumber } from "../lib/format";
 import type {
   AppConfig,
@@ -60,9 +60,6 @@ export default function DeployView({
   selectedDraft,
   onSelect,
   onConfigChange,
-  onStart,
-  onStop,
-  busy,
 }: {
   config: AppConfig | null;
   server: ServerStatus | null;
@@ -74,13 +71,10 @@ export default function DeployView({
   selectedDraft: string | null;
   onSelect: (m: string | null, mm: string | null, d: string | null) => void;
   onConfigChange: (c: AppConfig) => void;
-  onStart: () => void;
-  onStop: () => void;
-  busy: boolean;
 }) {
   const toast = useToast();
   const [catalog, setCatalog] = useState<CatalogView | null>(null);
-  const [scanning, setScanning] = useState(false);
+  const [, setScanning] = useState(false);
   const [query, setQuery] = useState("");
   const [estimate, setEstimate] = useState<MemoryEstimate | null>(null);
   const [flags, setFlags] = useState<string[]>([]);
@@ -89,6 +83,7 @@ export default function DeployView({
   const [activeId, setActiveId] = useState<string | null>(config?.activeDeploymentId ?? null);
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [pendingDelete, setPendingDelete] = useState<string | null>(null);
+  const [naming, setNaming] = useState(false);
 
   const sc = config?.server;
 
@@ -226,10 +221,10 @@ export default function DeployView({
 
   const gpus = hardware?.gpu ?? [];
 
-  const saveAsDeployment = useCallback(async () => {
+  const saveAsDeployment = useCallback(
+    async (name: string) => {
     if (!config) return;
-    const name = window.prompt("Nombre del preset:", selectedModel ? basename(selectedModel).replace(/\.gguf$/i, "") : "Mi despliegue")?.trim();
-    if (!name) return;
+    if (!name.trim()) return;
     const dep: Deployment = {
       id: "",
       name,
@@ -314,21 +309,20 @@ export default function DeployView({
 
   if (!config || !sc) {
     return (
-      <Card>
+      <Section title="Cargando">
         <p className="py-6 text-center text-xs text-ink-400">Cargando…</p>
-      </Card>
+      </Section>
     );
   }
 
   return (
-    <div className="space-y-5">
-      <header className="flex flex-wrap items-start justify-between gap-4">
+    <div className="space-y-4 animate-fade-up">
+      <header className="flex flex-wrap items-end justify-between gap-4">
         <div>
           <h1 className="text-lg font-semibold tracking-tight text-ink-100">Despliegue</h1>
           <p className="mt-1 max-w-2xl text-xs leading-relaxed text-ink-400">
-            Un solo lugar para elegir el modelo, añadirle sus compañeros (mmproj,
-            MTP) y ajustar el servidor. Guarda el resultado como preset y cárgalo
-            de un clic cuando quieras cambiar de modelo.
+            Un modelo, sus compañeros y la configuración del servidor. Guárdalo
+            como despliegue para cargarlo de un clic la próxima vez.
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -340,8 +334,9 @@ export default function DeployView({
                 const d = deployments.find((x) => x.id === e.target.value);
                 if (d) void applyDeployment(d);
               }}
+              aria-label="Despliegue activo"
             >
-              <option value="">Sin preset</option>
+              <option value="">Sin despliegue</option>
               {deployments.map((d) => (
                 <option key={d.id} value={d.id}>
                   {d.name}
@@ -349,91 +344,215 @@ export default function DeployView({
               ))}
             </select>
           )}
-          <Button variant="primary" size="sm" icon={<Save size={13} />} onClick={saveAsDeployment}>
-            Guardar como preset
+          <Button
+            variant="primary"
+            size="sm"
+            icon={<Save size={13} />}
+            onClick={() => setNaming(true)}
+          >
+            Guardar despliegue
           </Button>
         </div>
       </header>
 
-      <Card title="1. Modelos" subtitle="El modelo base y, si los tienes, el proyector multimodal y el bloque MTP.">
-        <div className="space-y-3">
-          <ModelSlot label="Modelo principal" value={selectedModel} onPick={() => pickFile("primary")} onClear={() => onSelect(null, selectedMmproj, selectedDraft)} hint="El GGUF con los pesos del modelo." />
-          <ModelSlot label="Proyector multimodal (mmproj)" value={selectedMmproj} onPick={() => pickFile("mmproj")} onClear={() => onSelect(selectedModel, null, selectedDraft)} hint="Añade visión, audio y vídeo. Opcional." />
-          <ModelSlot label="MTP / draft" value={selectedDraft} onPick={() => pickFile("draft")} onClear={() => onSelect(selectedModel, selectedMmproj, null)} hint="Acelera la generación especulando tokens. Opcional." />
-        </div>
-
-        <div className="mt-4 flex flex-wrap items-end gap-3 border-t border-base-800 pt-4">
-          <div className="min-w-[16rem] flex-1">
-            <label className="label" htmlFor="models-dir">Carpeta de modelos</label>
-            <div className="relative">
-              <input id="models-dir" className="field mono pr-10 text-xs" value={modelsDir} onChange={(e) => onModelsDirChange(e.target.value)} placeholder="C:\\Users\\...\\modelos" />
-              <button onClick={pickFolder} className="btn-quiet absolute top-1/2 right-1 -translate-y-1/2 cursor-pointer rounded p-1.5 text-ink-400 hover:text-ink-100" title="Buscar carpeta" aria-label="Buscar carpeta">
-                <FolderOpen size={15} />
-              </button>
-            </div>
-          </div>
-          <Button variant="quiet" size="sm" icon={<FolderOpen size={13} />} onClick={() => api.openFolder(modelsDir)} disabled={!modelsDir}>Abrir</Button>
-          <Button size="sm" icon={<Search size={13} />} onClick={() => scan(modelsDir)} loading={scanning}>Escanear</Button>
-        </div>
-
-        {catalog && catalog.entries.length > 0 && (
-          <div className="mt-4 space-y-2 border-t border-base-800 pt-4">
-            <div className="flex flex-wrap items-center gap-2">
-              <input className="field flex-1 text-xs" placeholder="Filtrar por nombre, arquitectura o cuantización…" value={query} onChange={(e) => setQuery(e.target.value)} />
-              <span className="text-[0.6875rem] text-ink-500">{visibleCatalog.length} de {catalog.entries.length}</span>
-            </div>
-            <ul className="max-h-44 divide-y divide-base-800 overflow-y-auto rounded-lg border border-base-800">
-              {visibleCatalog.slice(0, 40).map((e) => (
-                <li key={e.path}>
-                  <button
-                    onClick={() => {
-                      if (e.role === "primary") onSelect(e.path, selectedMmproj, selectedDraft);
-                      else if (e.role === "mmproj") onSelect(selectedModel, e.path, selectedDraft);
-                      else onSelect(selectedModel, selectedMmproj, e.path);
-                    }}
-                    className="flex w-full cursor-pointer items-center gap-2.5 px-3 py-2 text-left text-xs transition-colors duration-200 hover:bg-base-850"
-                  >
-                    <span className={clsx("flex h-6 w-6 shrink-0 items-center justify-center rounded-md", e.role === "primary" ? "bg-accent-600/15 text-accent-400" : e.role === "mmproj" ? "bg-violet-500/15 text-violet-400" : "bg-info-500/15 text-info-400")}>
-                      {e.role === "primary" ? <Layers size={12} /> : e.role === "mmproj" ? <Video size={12} /> : <Zap size={12} />}
-                    </span>
-                    <span className="min-w-0 flex-1">
-                      <span className="block truncate text-ink-100">{e.fileName}</span>
-                      <span className="block truncate text-[0.6875rem] text-ink-500">{e.quant} · {e.arch} · {formatBytes(e.sizeBytes)}</span>
-                    </span>
-                  </button>
-                </li>
-              ))}
-            </ul>
-          </div>
-        )}
-
-        {detail && (
-          <div className="mt-4 rounded-lg border border-base-800 bg-base-900/50 p-3 text-[0.6875rem]">
-            <p className="mb-1.5 font-medium text-ink-300">{detail.fileName} · {detail.arch} · {detail.quant}</p>
-            <p className="text-ink-500">
-              {detail.nLayers} capas · ctx {detail.contextLength.toLocaleString("es-ES")} · {formatNumber(detail.nParamsEst)} parámetros
-              {detail.mtp?.hasMtp && " · con MTP"}
-              {detail.isMmproj && " · proyector multimodal"}
-            </p>
-          </div>
-        )}
-      </Card>
-
-      <div className="grid gap-4 xl:grid-cols-[1fr_20rem]">
+      <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_19rem]">
+        {/* ==================== COLUMNA PRINCIPAL ==================== */}
         <div className="space-y-4">
-          <Card title="2. Contexto y lotes" subtitle="Cuánto recuerda el modelo por sesión.">
-            <div className="grid gap-4 sm:grid-cols-2">
-              <SelectField label="Contexto" value={String(sc.ctxSize)} onChange={(v) => update({ ctxSize: Number(v) })} options={CTX_STEPS.map((s) => ({ value: String(s), label: `${s.toLocaleString("es-ES")} tokens` }))} hint="Se alinea a múltiplos de 256." />
-              <NumberField label="Tamaño de lote" value={sc.batchSize} onChange={(v) => update({ batchSize: v })} min={32} max={65536} step={32} suffix="tokens" hint="Tokens por tanda." />
-              <NumberField label="Micro-lote" value={sc.ubatchSize} onChange={(v) => update({ ubatchSize: v })} min={32} max={8192} step={32} suffix="tokens" hint="Sub-bloque de cómputo." />
-              <NumberField label="Sesiones en paralelo" value={sc.nParallel} onChange={(v) => update({ nParallel: v })} min={1} max={64} hint={sc.nParallel > 1 ? "La caché SWA reserva memoria por sesión." : "Peticiones simultáneas."} />
+          {/* ---------- MODELO ---------- */}
+          <Section
+            title="Modelo"
+            description="El GGUF con los pesos. Los compañeros son opcionales y sedetectan por nombre."
+            actions={
+              <Button
+                size="sm"
+                variant="quiet"
+                icon={<FolderOpen size={12} />}
+                onClick={pickFolder}
+              >
+                Carpeta
+              </Button>
+            }
+          >
+            <div className="space-y-2.5">
+              <ModelSlot
+                label="Principal"
+                value={selectedModel}
+                role="primary"
+                onPick={() => pickFile("primary")}
+                onClear={() => onSelect(null, selectedMmproj, selectedDraft)}
+                hint="El modelo que se carga en memoria."
+              />
+              <ModelSlot
+                label="Proyector multimodal"
+                value={selectedMmproj}
+                role="mmproj"
+                onPick={() => pickFile("mmproj")}
+                onClear={() => onSelect(selectedModel, null, selectedDraft)}
+                hint="Añade visión, audio y vídeo."
+              />
+              <ModelSlot
+                label="MTP / draft"
+                value={selectedDraft}
+                role="draft"
+                onPick={() => pickFile("draft")}
+                onClear={() => onSelect(selectedModel, selectedMmproj, null)}
+                hint="Genera tokens por adelantado para ir más rápido."
+              />
             </div>
-          </Card>
 
-          <Card title="3. GPU y reparto" subtitle="En qué tarjeta se carga el modelo y cómo se reparte.">
-            <div className="space-y-3">
+            {/* Catálogo: solo si hay algo que mostrar */}
+            {catalog && catalog.entries.length > 0 && (
+              <div className="mt-4 border-t border-base-800 pt-3">
+                <div className="mb-2 flex flex-wrap items-center gap-2">
+                  <div className="relative min-w-[14rem] flex-1">
+                    <Search
+                      size={13}
+                      className="pointer-events-none absolute top-1/2 left-2.5 -translate-y-1/2 text-ink-500"
+                    />
+                    <input
+                      className="field pl-8 text-xs"
+                      placeholder="Filtrar por nombre, arquitectura o cuantización"
+                      value={query}
+                      onChange={(e) => setQuery(e.target.value)}
+                    />
+                  </div>
+                  <span className="text-[0.75rem] text-ink-400">
+                    {visibleCatalog.length} de {catalog.entries.length}
+                  </span>
+                </div>
+                <ul className="-mx-1 max-h-56 overflow-y-auto">
+                  {visibleCatalog.slice(0, 50).map((e) => {
+                    const assigned =
+                      (e.role === "primary" && e.path === selectedModel) ||
+                      (e.role === "mmproj" && e.path === selectedMmproj) ||
+                      (e.role === "draft" && e.path === selectedDraft);
+                    return (
+                      <li key={e.path}>
+                        <button
+                          onClick={() => {
+                            if (e.role === "primary")
+                              onSelect(e.path, selectedMmproj, selectedDraft);
+                            else if (e.role === "mmproj")
+                              onSelect(selectedModel, e.path, selectedDraft);
+                            else onSelect(selectedModel, selectedMmproj, e.path);
+                          }}
+                          className="flex w-full cursor-pointer items-center gap-2.5 rounded-md px-2 py-1.5 text-left transition-colors duration-150 hover:bg-base-850"
+                        >
+                          <span
+                            className={clsx(
+                              "flex h-5 w-5 shrink-0 items-center justify-center rounded",
+                              e.role === "primary"
+                                ? "bg-accent-500/14 text-accent-400"
+                                : e.role === "mmproj"
+                                  ? "bg-violet-500/14 text-violet-400"
+                                  : "bg-info-500/14 text-info-400",
+                            )}
+                          >
+                            {e.role === "primary" ? (
+                              <Layers size={11} />
+                            ) : e.role === "mmproj" ? (
+                              <Video size={11} />
+                            ) : (
+                              <Zap size={11} />
+                            )}
+                          </span>
+                          <span className="min-w-0 flex-1">
+                            <span className="block truncate text-xs text-ink-200">
+                              {e.fileName}
+                            </span>
+                            <span className="block truncate text-[0.75rem] text-ink-500">
+                              {e.quant} · {e.arch} · {formatBytes(e.sizeBytes)}
+                            </span>
+                          </span>
+                          {assigned && (
+                            <span className="chip chip-accent shrink-0">Asignado</span>
+                          )}
+                        </button>
+                      </li>
+                    );
+                  })}
+                </ul>
+              </div>
+            )}
+
+            {detail && (
+              <div className="mt-3 border-t border-base-800 pt-3 text-[0.75rem] text-ink-400">
+                <span className="font-medium text-ink-300">
+                  {detail.fileName} · {detail.arch} · {detail.quant}
+                </span>
+                <span className="ml-2">
+                  {detail.nLayers} capas · ctx{" "}
+                  {detail.contextLength.toLocaleString("es-ES")} ·{" "}
+                  {formatNumber(detail.nParamsEst)} parámetros
+                  {detail.mtp?.hasMtp && " · con MTP"}
+                  {detail.isMmproj && " · proyector multimodal"}
+                </span>
+              </div>
+            )}
+          </Section>
+
+          {/* ---------- CAPACIDAD ---------- */}
+          <Section
+            title="Memoria y capacidad"
+            description="Cuánto recuerda el modelo y cuánto ocupa la caché."
+          >
+            <div className="grid gap-4 sm:grid-cols-2">
+              <SelectField
+                label="Contexto"
+                value={String(sc.ctxSize)}
+                onChange={(v) => update({ ctxSize: Number(v) })}
+                options={CTX_STEPS.map((s) => ({
+                  value: String(s),
+                  label: `${s.toLocaleString("es-ES")} tokens`,
+                }))}
+                hint="Se alinea a múltiplos de 256."
+              />
+              <NumberField
+                label="Sesiones en paralelo"
+                value={sc.nParallel}
+                onChange={(v) => update({ nParallel: v })}
+                min={1}
+                max={64}
+                hint={
+                  sc.nParallel > 1
+                    ? "La caché reserva memoria por sesión: el consumo sube."
+                    : "Peticiones simultáneas."
+                }
+              />
+              <NumberField
+                label="Tamaño de lote"
+                value={sc.batchSize}
+                onChange={(v) => update({ batchSize: v })}
+                min={32}
+                max={65536}
+                step={32}
+                suffix="tokens"
+                hint="Tokens por tanda."
+              />
+              <NumberField
+                label="Micro-lote"
+                value={sc.ubatchSize}
+                onChange={(v) => update({ ubatchSize: v })}
+                min={32}
+                max={8192}
+                step={32}
+                suffix="tokens"
+                hint="Sub-bloque de cómputo."
+              />
+            </div>
+          </Section>
+
+          {/* ---------- GPU ---------- */}
+          <Section
+            title="Tarjeta gráfica"
+            description="Dónde se carga el modelo y cómo se reparte entre las tarjetas."
+          >
+            <div className="space-y-4">
               {gpus.length === 0 ? (
-                <p className="py-2 text-xs text-ink-500">No se ha detectado ninguna GPU. Se usará el dispositivo por defecto de llama.cpp.</p>
+                <p className="py-2 text-xs text-ink-400">
+                  No se ha detectado ninguna GPU. Se usará el dispositivo por
+                  defecto de llama.cpp.
+                </p>
               ) : (
                 <div className="space-y-1.5">
                   {gpus.map((g) => {
@@ -445,21 +564,59 @@ export default function DeployView({
                         onClick={() => {
                           const cur = (sc.device ?? "").split(",").filter(Boolean);
                           const next = on ? cur.filter((s) => s !== id) : [...cur, id];
-                          const ordered = gpus.map((x) => `${x.api}${x.index}`).filter((i) => next.includes(i));
-                          update({ device: ordered.length === 0 ? null : ordered.join(",") });
+                          const ordered = gpus
+                            .map((x) => `${x.api}${x.index}`)
+                            .filter((i) => next.includes(i));
+                          update({
+                            device: ordered.length === 0 ? null : ordered.join(","),
+                          });
                         }}
-                        className={clsx("flex w-full cursor-pointer items-center gap-2.5 rounded-lg border px-2.5 py-2 text-left transition-colors duration-200", on ? "border-accent-500/50 bg-accent-600/12" : "border-base-750 bg-base-950 hover:border-base-700")}
+                        className={clsx(
+                          "flex w-full cursor-pointer items-center gap-2.5 rounded-lg border px-2.5 py-2 text-left transition-colors duration-150",
+                          on
+                            ? "border-accent-500/45 bg-accent-500/10"
+                            : "border-base-800 bg-base-950 hover:border-base-700",
+                        )}
                         aria-pressed={on}
                       >
-                        <span className={clsx("flex h-4 w-4 shrink-0 items-center justify-center rounded border", on ? "border-accent-500 bg-accent-500" : "border-base-600")}>
-                          {on && <svg width="10" height="10" viewBox="0 0 24 24" fill="none"><path d="m5 13 4 4L19 7" stroke="#04150e" strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round" /></svg>}
+                        <span
+                          className={clsx(
+                            "flex h-4 w-4 shrink-0 items-center justify-center rounded border",
+                            on ? "border-accent-500 bg-accent-500" : "border-base-700",
+                          )}
+                        >
+                          {on && (
+                            <svg width="10" height="10" viewBox="0 0 24 24" fill="none">
+                              <path
+                                d="m5 13 4 4L19 7"
+                                stroke="#08091c"
+                                strokeWidth="3.5"
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                              />
+                            </svg>
+                          )}
                         </span>
                         <span className="min-w-0 flex-1">
-                          <span className="block truncate text-xs text-ink-100">{g.name}</span>
+                          <span className="block truncate text-xs text-ink-100">
+                            {g.name}
+                          </span>
                           <span className="mt-0.5 flex flex-wrap items-center gap-1.5">
-                            <span className="mono text-[0.6875rem] text-ink-500">{id}</span>
-                            <span className="chip">{g.kind === "discrete" ? "Dedicada" : g.kind === "integrated" ? "Integrada" : g.kind}</span>
-                            {g.vramTotalMib > 0 && <span className="mono text-[0.6875rem] text-ink-500">{(g.vramTotalMib / 1024).toFixed(1)} GB</span>}
+                            <span className="mono text-[0.75rem] text-ink-500">
+                              {id}
+                            </span>
+                            <span className="chip">
+                              {g.kind === "discrete"
+                                ? "Dedicada"
+                                : g.kind === "integrated"
+                                  ? "Integrada"
+                                  : g.kind}
+                            </span>
+                            {g.vramTotalMib > 0 && (
+                              <span className="mono text-[0.75rem] text-ink-500">
+                                {(g.vramTotalMib / 1024).toFixed(1)} GB
+                              </span>
+                            )}
                           </span>
                         </span>
                       </button>
@@ -469,153 +626,341 @@ export default function DeployView({
               )}
 
               <div className="grid gap-4 sm:grid-cols-2">
-                <SelectField label="Capas en la GPU" value={sc.nGpuLayers === null ? "auto" : String(sc.nGpuLayers)} onChange={(v) => update({ nGpuLayers: v === "auto" ? null : Number(v) })} options={[{ value: "auto", label: "Automático" }, ...Array.from({ length: 65 }, (_, i) => ({ value: String(i), label: i === 0 ? "0 (solo CPU)" : `${i} capas` }))]} hint="Todas las capas es lo más rápido, si la VRAM alcanza." />
-                <SelectField label="Flash Attention" value={sc.flashAttn} onChange={(v) => update({ flashAttn: v })} options={[{ value: "auto", label: "Automático" }, { value: "on", label: "Activado" }, { value: "off", label: "Desactivado" }]} hint="Acelera la atención y ahorra memoria en contextos largos." />
-                <SelectField label="Tipo de caché K" value={sc.cacheTypeK} onChange={(v) => update({ cacheTypeK: v })} options={CACHE_TYPES} hint="Cuantizar la caché reduce la VRAM a costa de calidad." />
-                <SelectField label="Tipo de caché V" value={sc.cacheTypeV} onChange={(v) => update({ cacheTypeV: v })} options={CACHE_TYPES} />
+                <SelectField
+                  label="Capas en la GPU"
+                  value={sc.nGpuLayers === null ? "auto" : String(sc.nGpuLayers)}
+                  onChange={(v) =>
+                    update({ nGpuLayers: v === "auto" ? null : Number(v) })
+                  }
+                  options={[
+                    { value: "auto", label: "Automático" },
+                    ...Array.from({ length: 65 }, (_, i) => ({
+                      value: String(i),
+                      label: i === 0 ? "0 (solo CPU)" : `${i} capas`,
+                    })),
+                  ]}
+                  hint="Todas las capas es lo más rápido, si la VRAM alcanza."
+                />
+                <SelectField
+                  label="Flash Attention"
+                  value={sc.flashAttn}
+                  onChange={(v) => update({ flashAttn: v })}
+                  options={[
+                    { value: "auto", label: "Automático" },
+                    { value: "on", label: "Activado" },
+                    { value: "off", label: "Desactivado" },
+                  ]}
+                  hint="Acelera la atención y ahorra memoria en contextos largos."
+                />
+                <SelectField
+                  label="Tipo de caché K"
+                  value={sc.cacheTypeK}
+                  onChange={(v) => update({ cacheTypeK: v })}
+                  options={CACHE_TYPES}
+                  hint="Cuantizar la caché reduce la VRAM a costa de calidad."
+                />
+                <SelectField
+                  label="Tipo de caché V"
+                  value={sc.cacheTypeV}
+                  onChange={(v) => update({ cacheTypeV: v })}
+                  options={CACHE_TYPES}
+                />
               </div>
 
               {gpus.length > 1 && (
-                <label className="mt-3 flex cursor-pointer items-start gap-2.5">
-                  <input type="checkbox" className="mt-0.5 h-4 w-4 shrink-0 cursor-pointer accent-accent-500" checked={sc.multiGpu} onChange={(e) => update({ multiGpu: e.target.checked })} />
+                <label className="flex cursor-pointer items-start gap-2.5">
+                  <input
+                    type="checkbox"
+                    className="mt-0.5 h-4 w-4 shrink-0 cursor-pointer accent-accent-500"
+                    checked={sc.multiGpu}
+                    onChange={(e) => update({ multiGpu: e.target.checked })}
+                  />
                   <span className="min-w-0">
-                    <span className="block text-xs font-medium text-ink-100">Repartir el modelo entre las tarjetas</span>
-                    <span className="mt-0.5 block text-[0.6875rem] leading-relaxed text-ink-500">Las capas se reparten entre las GPUs seleccionadas. Con dos tarjetas con 16 GB cada una puedes cargar un modelo que no cabe en una sola.</span>
+                    <span className="block text-xs font-medium text-ink-100">
+                      Repartir el modelo entre las tarjetas
+                    </span>
+                    <span className="mt-0.5 block text-[0.75rem] leading-relaxed text-ink-400">
+                      Las capas se reparten entre las GPUs seleccionadas. Con dos
+                      tarjetas de 16 GB puedes cargar un modelo que no cabe en
+                      una sola.
+                    </span>
                   </span>
                 </label>
               )}
 
               {sc.multiGpu && (
-                <div className="mt-3 grid gap-4 sm:grid-cols-2">
-                  <Field label="Reparto (tensor-split)" hint="Proporción de capas por dispositivo, separada por comas. Con 2 GPUs: 1,1 (mitad y mitad), 3,1 (75% en la primera).">
-                    <input className="field mono" value={sc.tensorSplit ?? ""} placeholder="1,1" onChange={(e) => update({ tensorSplit: e.target.value || null })} />
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <Field
+                    label="Reparto (tensor-split)"
+                    hint="Proporción de capas por dispositivo, separada por comas. Con 2 GPUs: 1,1 (mitad y mitad), 3,1 (75% en la primera)."
+                  >
+                    <input
+                      className="field mono"
+                      value={sc.tensorSplit ?? ""}
+                      placeholder="1,1"
+                      onChange={(e) =>
+                        update({ tensorSplit: e.target.value || null })
+                      }
+                    />
                   </Field>
-                  <SelectField label="Unidad de reparto" value={sc.splitMode} onChange={(v) => update({ splitMode: v })} options={[{ value: "layer", label: "Por capas" }, { value: "row", label: "Por filas" }]} hint="Por capas reparte de forma más equilibrada." />
+                  <SelectField
+                    label="Unidad de reparto"
+                    value={sc.splitMode}
+                    onChange={(v) => update({ splitMode: v })}
+                    options={[
+                      { value: "layer", label: "Por capas" },
+                      { value: "row", label: "Por filas" },
+                    ]}
+                    hint="Por capas reparte de forma más equilibrada."
+                  />
                 </div>
               )}
+            </div>
+          </Section>
 
-              <div className="mt-3">
-                <Field label="Argumentos adicionales" hint='Se añaden al final del comando, así que pisan lo que genere la app. Admite comillas. Ejemplo: --temp 0.7 --top-p 0.9 --jinja "-cnv"'>
-                  <input className="field mono text-xs" value={sc.extraArgs} placeholder="--temp 0.7 --top-p 0.9" onChange={(e) => update({ extraArgs: e.target.value })} />
+          {/* ---------- AVANZADO ---------- */}
+          <Section
+            title="Avanzado"
+            description="Lo que casi nunca se toca: hilos, red y argumentos libres."
+            actions={
+              <button
+                onClick={() => setShowAdvanced((v) => !v)}
+                className="btn-quiet cursor-pointer rounded px-2 py-1 text-xs text-ink-300 hover:text-ink-100"
+              >
+                {showAdvanced ? "Ocultar" : "Mostrar"}
+              </button>
+            }
+          >
+            {showAdvanced ? (
+              <div className="space-y-4">
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <NumberField
+                    label="Hilos (generación)"
+                    value={sc.threads ?? 0}
+                    onChange={(v) => update({ threads: v > 0 ? v : null })}
+                    min={0}
+                    suffix={sc.threads ? "hilos" : "auto"}
+                    hint="0 usa todos los núcleos físicos."
+                  />
+                  <NumberField
+                    label="Hilos (lote)"
+                    value={sc.threadsBatch ?? 0}
+                    onChange={(v) => update({ threadsBatch: v > 0 ? v : null })}
+                    min={0}
+                    suffix={sc.threadsBatch ? "hilos" : "auto"}
+                  />
+                  <SelectField
+                    label="Dirección"
+                    value={sc.host}
+                    onChange={(v) => update({ host: v })}
+                    options={[
+                      { value: "127.0.0.1", label: "127.0.0.1 (solo este equipo)" },
+                      { value: "0.0.0.0", label: "0.0.0.0 (accesible en la red)" },
+                    ]}
+                    hint="Escuchar en la red expone el modelo a otros equipos."
+                  />
+                  <NumberField
+                    label="Puerto"
+                    value={sc.port}
+                    onChange={(v) => update({ port: v })}
+                    min={1024}
+                    max={65535}
+                  />
+                </div>
+                <Field label="Alias del modelo">
+                  <input
+                    className="field"
+                    placeholder="mi-modelo"
+                    value={sc.alias ?? ""}
+                    onChange={(e) => update({ alias: e.target.value || null })}
+                  />
+                </Field>
+                <Field
+                  label="Argumentos adicionales"
+                  hint='Se añaden al final del comando, así que pisan lo que genere la app. Admite comillas. Ejemplo: --temp 0.7 --top-p 0.9 --jinja "-cnv"'
+                >
+                  <input
+                    className="field mono text-xs"
+                    value={sc.extraArgs}
+                    placeholder="--temp 0.7 --top-p 0.9"
+                    onChange={(e) => update({ extraArgs: e.target.value })}
+                  />
                 </Field>
               </div>
-            </div>
-          </Card>
-
-          <Card title="4. Avanzado" subtitle="Hilos, red, alias y otros parámetros." actions={<button onClick={() => setShowAdvanced((v) => !v)} className="btn-quiet cursor-pointer rounded px-2 py-1 text-xs text-ink-400 hover:text-ink-100">{showAdvanced ? "Ocultar" : "Mostrar"}</button>}>
-            {showAdvanced ? (
-              <div className="grid gap-4 sm:grid-cols-2">
-                <NumberField label="Hilos (generación)" value={sc.threads ?? 0} onChange={(v) => update({ threads: v > 0 ? v : null })} min={0} suffix={sc.threads ? "hilos" : "auto"} hint="0 usa todos los núcleos físicos." />
-                <NumberField label="Hilos (lote)" value={sc.threadsBatch ?? 0} onChange={(v) => update({ threadsBatch: v > 0 ? v : null })} min={0} suffix={sc.threadsBatch ? "hilos" : "auto"} />
-                <SelectField label="Dirección" value={sc.host} onChange={(v) => update({ host: v })} options={[{ value: "127.0.0.1", label: "127.0.0.1 (solo este equipo)" }, { value: "0.0.0.0", label: "0.0.0.0 (accesible en la red)" }]} hint="Escuchar en la red expone el modelo a otros equipos." />
-                <NumberField label="Puerto" value={sc.port} onChange={(v) => update({ port: v })} min={1024} max={65535} />
-                <div className="sm:col-span-2">
-                  <Field label="Alias del modelo">
-                    <input id="alias" className="field" placeholder="mi-modelo" value={sc.alias ?? ""} onChange={(e) => update({ alias: e.target.value || null })} />
-                    <p className="mt-1.5 text-[0.6875rem] text-ink-500">Nombre con el que el modelo aparece en la API.</p>
-                  </Field>
-                </div>
-              </div>
             ) : (
-              <p className="py-2 text-xs text-ink-500">Hilos, dirección, puerto, alias y argumentos extra.</p>
+              <p className="text-xs text-ink-400">
+                Hilos, dirección, puerto, alias y argumentos libres.
+              </p>
             )}
-          </Card>
+          </Section>
+        </div>
 
+        {/* ==================== COLUMNA LATERAL ==================== */}
+        <div className="space-y-4">
+          {/* ---------- MEMORIA ESTIMADA ---------- */}
+          <Section
+            title="Memoria estimada"
+            description={selectedModel ? basename(selectedModel) : "Selecciona un modelo"}
+          >
+            {!estimate ? (
+              <p className="py-6 text-center text-xs text-ink-400">
+                Selecciona un modelo para ver cuánto ocupará.
+              </p>
+            ) : (
+              <div className="space-y-3">
+                <div>
+                  <p className="text-[0.75rem] tracking-wide text-ink-400 uppercase">
+                    Total
+                  </p>
+                  <p className="mono mt-1 text-2xl leading-none font-semibold text-ink-100">
+                    {formatGb(estimate.totalGb)}
+                  </p>
+                </div>
+                <LiveMeter
+                  value={estimate.weightsGpuGb}
+                  max={
+                    estimate.weightsGpuGb +
+                    estimate.kvCacheGb +
+                    estimate.computeBufferGb
+                  }
+                  label="En la GPU"
+                  valueLabel={formatGb(
+                    estimate.weightsGpuGb +
+                      estimate.kvCacheGb +
+                      estimate.computeBufferGb,
+                  )}
+                />
+                <dl className="space-y-0.5 border-t border-base-800 pt-2">
+                  <KeyValue label="Pesos en GPU" value={formatGb(estimate.weightsGpuGb)} mono />
+                  <KeyValue label="Pesos en CPU" value={formatGb(estimate.weightsCpuGb)} mono />
+                  <KeyValue
+                    label="Caché KV"
+                    value={`${estimate.kvCacheMib.toFixed(0)} MiB`}
+                    mono
+                  />
+                  <KeyValue label="— densas" value={formatGb(estimate.kvDenseGb)} mono />
+                  <KeyValue label="— deslizante" value={formatGb(estimate.kvSwaGb)} mono />
+                  <KeyValue
+                    label="Compute buffer"
+                    value={formatGb(estimate.computeBufferGb)}
+                    mono
+                  />
+                </dl>
+                <p className="border-t border-base-800 pt-2 text-[0.75rem] leading-relaxed text-ink-400">
+                  Contexto efectivo{" "}
+                  {estimate.ctxPadded.toLocaleString("es-ES")} tokens
+                  {estimate.nSwaLayers > 0 && (
+                    <>
+                      , {estimate.nDenseLayers} capas densas y{" "}
+                      {estimate.nSwaLayers} con ventana deslizante
+                    </>
+                  )}
+                  .
+                </p>
+              </div>
+            )}
+          </Section>
+
+          {/* ---------- COMANDO ---------- */}
+          <Section
+            title="Comando"
+            description="Lo que se pasa exactamente a llama-server."
+            actions={
+              flags.length > 0 && (
+                <button
+                  onClick={() => {
+                    navigator.clipboard
+                      .writeText(flags.join(" "))
+                      .then(() => toast.push("Comando copiado", "success"))
+                      .catch(() => toast.push("No se pudo copiar", "danger"));
+                  }}
+                  className="btn-quiet cursor-pointer rounded p-1.5 text-ink-400 hover:text-ink-100"
+                  title="Copiar el comando"
+                  aria-label="Copiar el comando"
+                >
+                  <Copy size={13} />
+                </button>
+              )
+            }
+          >
+            {flags.length === 0 ? (
+              <p className="py-3 text-center text-xs text-ink-400">Sin flags.</p>
+            ) : (
+              <div className="mono max-h-52 overflow-y-auto rounded-md bg-base-950 p-2.5 text-[0.75rem] leading-relaxed break-all text-ink-300">
+                {flags.map((f, i) => (
+                  <span key={i}>
+                    <span className="text-accent-400">{f}</span>
+                    {i < flags.length - 1 && " "}
+                  </span>
+                ))}
+              </div>
+            )}
+          </Section>
+
+          {/* ---------- DESPLIEGUES GUARDADOS ---------- */}
           {deployments.length > 0 && (
-            <Card title="Presets guardados" subtitle="Aplica uno y arranca. Cada uno trae su modelo y su configuración.">
-              <ul className="space-y-1.5">
+            <Section
+              title="Guardados"
+              description="Aplica uno y arranca."
+            >
+              <ul className="-mx-1">
                 {deployments.map((d) => (
-                  <li key={d.id} className="flex items-center gap-2 rounded-lg border border-base-750 bg-base-950 px-3 py-2">
-                    <span className="min-w-0 flex-1">
-                      <span className="block truncate text-xs text-ink-100">{d.name}</span>
-                      <span className="block truncate text-[0.6875rem] text-ink-500">{d.modelPath ? basename(d.modelPath) : "Sin modelo"} · ctx {d.server.ctxSize}</span>
-                    </span>
-                    <Button size="sm" variant="quiet" onClick={() => applyDeployment(d)}>Aplicar</Button>
-                    <button onClick={() => setPendingDelete(d.id)} className="btn-quiet cursor-pointer rounded p-1.5 text-ink-500 hover:text-danger-400" aria-label="Eliminar preset" title="Eliminar">
+                  <li key={d.id} className="row flex items-center gap-2 px-1 py-2">
+                    <button
+                      onClick={() => applyDeployment(d)}
+                      className="min-w-0 flex-1 cursor-pointer text-left"
+                    >
+                      <span className="block truncate text-xs text-ink-100">
+                        {d.name}
+                      </span>
+                      <span className="block truncate text-[0.75rem] text-ink-500">
+                        {d.modelPath ? basename(d.modelPath) : "Sin modelo"} ·{" "}
+                        {(d.server.ctxSize / 1024).toFixed(0)}k
+                      </span>
+                    </button>
+                    <button
+                      onClick={() => setPendingDelete(d.id)}
+                      className="btn-quiet cursor-pointer rounded p-1.5 text-ink-500 hover:text-danger-400"
+                      aria-label={`Eliminar ${d.name}`}
+                      title="Eliminar"
+                    >
                       <Trash2 size={13} />
                     </button>
                   </li>
                 ))}
               </ul>
-            </Card>
+            </Section>
           )}
-        </div>
 
-        <div className="space-y-4">
-          <Card title="Memoria estimada" subtitle={selectedModel ? basename(selectedModel) : undefined}>
-            {!estimate ? (
-              <p className="py-4 text-center text-xs text-ink-500">Selecciona un modelo para ver la estimación.</p>
-            ) : (
-              <div className="space-y-3.5">
-                <div>
-                  <p className="text-[0.6875rem] text-ink-400">Peso total en memoria</p>
-                  <p className="mono mt-0.5 text-xl font-semibold text-ink-100">{formatGb(estimate.totalGb)}</p>
-                </div>
-                <Meter value={estimate.weightsGpuGb} max={estimate.weightsGpuGb + estimate.kvCacheGb + estimate.computeBufferGb} label="En la GPU" valueLabel={formatGb(estimate.weightsGpuGb + estimate.kvCacheGb + estimate.computeBufferGb)} />
-                <dl className="space-y-1.5 border-t border-base-800 pt-3 text-[0.6875rem]">
-                  {([["Pesos (GPU)", formatGb(estimate.weightsGpuGb)], ["Pesos (CPU)", formatGb(estimate.weightsCpuGb)], ["Caché KV", `${estimate.kvCacheMib.toFixed(0)} MiB`], ["— densas", formatGb(estimate.kvDenseGb)], ["— deslizante", formatGb(estimate.kvSwaGb)], ["Compute buffer", formatGb(estimate.computeBufferGb)] ] as const).map(([k, v]) => (
-                    <div key={k} className="flex justify-between gap-3">
-                      <dt className="text-ink-500">{k}</dt>
-                      <dd className="mono tabular-nums text-ink-200">{v}</dd>
-                    </div>
-                  ))}
-                </dl>
-                <div className="flex items-start gap-2 border-t border-base-800 pt-3 text-[0.6875rem] leading-relaxed text-ink-500">
-                  <Zap size={12} className="mt-0.5 shrink-0" />
-                  <span>
-                    Contexto efectivo {estimate.ctxPadded.toLocaleString("es-ES")} tokens
-                    {estimate.nSwaLayers > 0 && (<> , {estimate.nDenseLayers} capas densas y {estimate.nSwaLayers} con ventana deslizante</>)}
-                    .
-                  </span>
-                </div>
-              </div>
-            )}
-          </Card>
-
-          <Card title="Comando que se ejecutará" subtitle="Lo que se pasa exactamente a llama-server." actions={flags.length > 0 && (
-            <button onClick={() => { navigator.clipboard.writeText(flags.join(" ")).then(() => toast.push("Comando copiado", "success")).catch(() => toast.push("No se pudo copiar", "danger")); }} className="btn-quiet cursor-pointer rounded p-1.5 text-ink-400 hover:text-ink-100" title="Copiar el comando" aria-label="Copiar el comando">
-              <Copy size={13} />
-            </button>
-          )}>
-            {flags.length === 0 ? (
-              <p className="py-3 text-center text-xs text-ink-500">Sin flags.</p>
-            ) : (
-              <div className="mono max-h-56 overflow-y-auto rounded-lg bg-base-950 p-3 text-[0.6875rem] leading-relaxed break-all text-ink-300">
-                {flags.map((f, i) => <span key={i}><span className="text-accent-400">{f}</span>{i < flags.length - 1 && " "}</span>)}
-              </div>
-            )}
-          </Card>
-
+          {/* ---------- REGISTRO ---------- */}
           {server?.running && (
-            <Card title="Registro del servidor" subtitle={server.logFile ?? undefined}>
-              <pre className="mono max-h-48 overflow-auto rounded-lg bg-base-950 p-3 text-[0.6875rem] leading-relaxed text-ink-400">
+            <Section title="Registro" description={server.logFile ?? undefined}>
+              <pre className="mono max-h-48 overflow-auto rounded-md bg-base-950 p-2.5 text-[0.75rem] leading-relaxed text-ink-400">
                 {log || "Sin líneas todavía."}
               </pre>
-            </Card>
+            </Section>
           )}
         </div>
       </div>
 
-      <Card title="Arrancar">
-        <div className="flex flex-wrap gap-2">
-          {server?.running ? (
-            <Button variant="danger" icon={<Square size={13} />} onClick={onStop} loading={busy}>Detener servidor</Button>
-          ) : (
-            <Button variant="primary" icon={<Play size={13} />} onClick={onStart} loading={busy}>Arrancar servidor</Button>
-          )}
-          <Button variant="quiet" icon={<Save size={13} />} onClick={saveAsDeployment} disabled={!config}>Guardar como preset</Button>
-        </div>
-        {server?.running && (
-          <p className="mt-2 text-[0.6875rem] text-ink-500">
-            Servidor en marcha en <span className="mono text-ink-300">http://{server.host}:{server.port}</span>. Los cambios de configuración requieren reiniciar.
-          </p>
-        )}
-      </Card>
+      <PromptDialog
+        open={naming}
+        title="Guardar despliegue"
+        label="Nombre"
+        defaultValue={selectedModel ? basename(selectedModel).replace(/\.gguf$/i, "") : ""}
+        placeholder="Gemma 32k en la RX 9070"
+        confirmLabel="Guardar"
+        onConfirm={(name) => {
+          setNaming(false);
+          void saveAsDeployment(name);
+        }}
+        onCancel={() => setNaming(false)}
+      />
 
       <ConfirmDialog
         open={pendingDelete !== null}
-        title="Eliminar preset"
-        message="Se borra el preset guardado. Los modelos y la configuración actual no se tocan."
+        title="Eliminar despliegue"
+        message="Se borra el despliegue guardado. Los modelos y la configuración actual no se tocan."
         confirmLabel="Eliminar"
         danger
         onConfirm={() => pendingDelete && void deleteDeployment(pendingDelete)}
@@ -625,24 +970,70 @@ export default function DeployView({
   );
 }
 
-function ModelSlot({ label, value, onPick, onClear, hint }: { label: string; value: string | null; onPick: () => void; onClear: () => void; hint: string }) {
+function ModelSlot({
+  label,
+  value,
+  role,
+  onPick,
+  onClear,
+  hint,
+}: {
+  label: string;
+  value: string | null;
+  role: "primary" | "mmproj" | "draft";
+  onPick: () => void;
+  onClear: () => void;
+  hint: string;
+}) {
+  const Icon = role === "primary" ? Layers : role === "mmproj" ? Video : Zap;
+  const tone =
+    role === "primary"
+      ? "text-accent-400 bg-accent-500/12"
+      : role === "mmproj"
+        ? "text-violet-400 bg-violet-500/12"
+        : "text-info-400 bg-info-500/12";
+
   return (
-    <div className="flex items-start gap-3">
+    <div className="flex items-start gap-2.5">
+      <span
+        className={clsx(
+          "mt-6 flex h-7 w-7 shrink-0 items-center justify-center rounded-md",
+          tone,
+        )}
+      >
+        <Icon size={13} />
+      </span>
       <div className="min-w-0 flex-1">
         <label className="label">{label}</label>
-        <div className="relative">
-          <input className="field mono pr-10 text-xs" value={value ?? ""} placeholder="Sin asignar" readOnly />
-          <button onClick={onPick} className="btn-quiet absolute top-1/2 right-1 -translate-y-1/2 cursor-pointer rounded p-1.5 text-ink-400 hover:text-ink-100" title="Buscar en el explorador" aria-label={`Buscar ${label}`}>
-            <FolderOpen size={15} />
+        <div className="flex gap-1.5">
+          <input
+            className="field mono text-xs"
+            value={value ? basename(value) : ""}
+            placeholder="Sin asignar"
+            readOnly
+            title={value ?? undefined}
+          />
+          <button
+            onClick={onPick}
+            className="btn-quiet flex shrink-0 cursor-pointer items-center gap-1.5 rounded-md border border-base-700 px-2 text-ink-300 transition-colors duration-150 hover:border-accent-500/50 hover:text-ink-100"
+            title="Buscar en el explorador"
+            aria-label={`Buscar ${label}`}
+          >
+            <FolderOpen size={14} />
           </button>
+          {value && (
+            <button
+              onClick={onClear}
+              className="btn-quiet flex shrink-0 cursor-pointer items-center rounded-md border border-base-700 px-2 text-ink-400 transition-colors duration-150 hover:border-danger-500/50 hover:text-danger-400"
+              aria-label={`Quitar ${label}`}
+              title="Quitar"
+            >
+              <Trash2 size={14} />
+            </button>
+          )}
         </div>
-        {hint && <p className="mt-1.5 text-[0.6875rem] text-ink-500">{hint}</p>}
+        <p className="mt-1 text-[0.75rem] text-ink-500">{hint}</p>
       </div>
-      {value && (
-        <button onClick={onClear} className="mt-7 btn-quiet cursor-pointer rounded-lg px-2 text-ink-500 hover:text-danger-400" aria-label={`Quitar ${label}`} title="Quitar">
-          <Trash2 size={14} />
-        </button>
-      )}
     </div>
   );
 }

@@ -18,6 +18,7 @@ mod memory;
 mod models;
 mod releases;
 mod server;
+mod telemetry;
 
 // Los módulos se exponen para que los tests de integración puedan
 // comprobar la fórmula de memoria contra medidas reales.
@@ -153,43 +154,108 @@ async fn resolve_stable_tag(
 }
 
 /// Lista las releases ESTABLES (`vX.Y.Z`) con el tag nightly que trae los
-/// binarios. Sirve para instalar una version estable en vez de la ultima
-/// nightly.
+/// binarios.
+///
+/// Las releases estables son POCAS frente a las nightlies: entre dos
+/// estables hay decenas de `b#####`. Por eso NO vale con pedir una sola
+/// pagina de `per_page=30` y filtrar: el feed lo saturan las nightlies y no
+/// sale ni una estable. Hay que paginar hasta reunir las pedidas.
 #[tauri::command]
 async fn list_stable_releases(
     state: State<'_, AppState>,
     per_page: Option<u32>,
 ) -> CmdResult<Vec<StableRelease>> {
     let token = state.config.lock().await.github_token.clone();
-    let mut all = releases::list_releases(&state.client, token.as_deref(), per_page.unwrap_or(30)).await?;
-    all.retain(|r| !r.prerelease && r.tag_name.starts_with('v'));
+    let wanted = per_page.unwrap_or(8).clamp(1, 20) as usize;
 
-    let mut out = Vec::new();
-    for r in all {
-        let nightly = releases::resolve_stable_to_nightly(
+    let mut out: Vec<StableRelease> = Vec::new();
+    let mut page = 1u32;
+    // 10 paginas x 100 = 1000 releases: de sobra para encontrar las
+    // ultimas estables, y es el tope de la API sin paginacion.
+    while out.len() < wanted && page <= 10 {
+        let batch = releases::list_releases_page(
             &state.client,
             token.as_deref(),
-            &r.tag_name,
+            100,
+            page,
         )
-        .await
-        .ok();
-        out.push(StableRelease {
-            tag: r.tag_name.clone(),
-            nightly_tag: nightly,
-            published_at: r.published_at.clone(),
-            html_url: r.html_url.clone(),
-        });
+        .await?;
+        if batch.is_empty() {
+            break;
+        }
+        for r in batch {
+            if r.prerelease || !r.tag_name.starts_with('v') {
+                continue;
+            }
+            let nightly = releases::resolve_stable_to_nightly(
+                &state.client,
+                token.as_deref(),
+                &r.tag_name,
+            )
+            .await
+            .ok();
+            // La nightly equivalente trae los binarios de verdad.
+            let (assets, recommended, unavailable_reason) = match nightly.as_deref() {
+                Some(ntag) => {
+                    match releases::get_release(&state.client, token.as_deref(), ntag).await {
+                        Ok(nrel) => {
+                            let assets = releases::classify_release(&nrel, &host_os(), &host_arch());
+                            let recommended = releases::recommend_asset(&assets, None)
+                                .map(|a| a.name.clone());
+                            let reason = if assets.is_empty() {
+                                Some(format!(
+                                    "{ntag} no publica paquetes para Windows en esta arquitectura"
+                                ))
+                            } else {
+                                None
+                            };
+                            (assets, recommended, reason)
+                        }
+                        Err(e) => (Vec::new(), None, Some(e)),
+                    }
+                }
+                None => (
+                    Vec::new(),
+                    None,
+                    Some("Esta release no publica el puntero nightly-tag.txt".to_string()),
+                ),
+            };
+            out.push(StableRelease {
+                tag: r.tag_name.clone(),
+                nightly_tag: nightly,
+                published_at: r.published_at.clone(),
+                html_url: r.html_url.clone(),
+                assets,
+                recommended,
+                unavailable_reason,
+            });
+            if out.len() >= wanted {
+                break;
+            }
+        }
+        page += 1;
     }
     Ok(out)
 }
 
 /// Una release estable y el tag nightly que trae los binarios.
+///
+/// Las releases estables de llama.cpp NO publican binarios: publican un
+/// asset `nightly-tag.txt` con el tag `b#####` equivalente. La app resuelve
+/// ese puntero y trae los assets REALES de la nightly, para que el usuario
+/// pueda instalar una version estable sin salir de la pestana.
 #[derive(Debug, Clone, Serialize)]
 pub struct StableRelease {
     pub tag: String,
     pub nightly_tag: Option<String>,
     pub published_at: Option<String>,
     pub html_url: String,
+    /// Assets de la nightly equivalente (los que se pueden instalar).
+    pub assets: Vec<BinaryAsset>,
+    /// Asset recomendado para este equipo.
+    pub recommended: Option<String>,
+    /// Por que no hay assets, si es que no los hay.
+    pub unavailable_reason: Option<String>,
 }
 
 /// Detalle de una release concreta.
@@ -632,6 +698,40 @@ fn host_arch() -> String {
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
+
+/// Instantánea de la telemetría del equipo y del servidor.
+#[tauri::command]
+async fn telemetry_snapshot(state: State<'_, AppState>) -> CmdResult<telemetry::Telemetry> {
+    let cfg = state.config.lock().await.clone();
+    let llama_server = current_llama_server(&cfg);
+    let pid = crate::server::current_pid();
+    Ok(telemetry::snapshot(llama_server.as_deref(), pid))
+}
+
+/// Slots ocupados del servidor en marcha.
+#[tauri::command]
+async fn telemetry_slots(
+    state: State<'_, AppState>,
+) -> CmdResult<Option<telemetry::SlotsState>> {
+    let cfg = state.config.lock().await.clone();
+    let (host, port) = crate::server::current_endpoint();
+    if host.is_empty() {
+        return Ok(None);
+    }
+    Ok(telemetry::slots_state(&host, port))
+}
+
+/// Velocidad real medida contra el servidor en marcha.
+#[tauri::command]
+async fn telemetry_speed(state: State<'_, AppState>) -> CmdResult<telemetry::SpeedResult> {
+    let cfg = state.config.lock().await.clone();
+    let (host, port) = crate::server::current_endpoint();
+    if host.is_empty() {
+        return Err("No hay ningún servidor en marcha".to_string());
+    }
+    telemetry::probe_speed(&host, port)
+}
+
 pub fn run() {
     env_logger::init();
 
@@ -678,6 +778,9 @@ pub fn run() {
             list_binaries,
             open_folder,
             bootstrap,
+            telemetry_snapshot,
+            telemetry_slots,
+            telemetry_speed,
             list_deployments,
             save_deployment,
             delete_deployment,

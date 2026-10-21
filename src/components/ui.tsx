@@ -117,7 +117,7 @@ export function Field({
         {label}
       </label>
       {children}
-      {hint && <p className="mt-1.5 text-[0.6875rem] leading-relaxed text-ink-500">{hint}</p>}
+      {hint && <p className="mt-1.5 text-[0.75rem] leading-relaxed text-ink-500">{hint}</p>}
     </div>
   );
 }
@@ -160,7 +160,7 @@ export function NumberField({
           }}
         />
         {suffix && (
-          <span className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-[0.6875rem] font-medium text-ink-500">
+          <span className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-[0.75rem] font-medium text-ink-500">
             {suffix}
           </span>
         )}
@@ -279,7 +279,14 @@ export function Meter({
           )}
         </div>
       )}
-      <div className={clsx("meter", tone)} role="meter" aria-valuenow={value} aria-valuemax={max}>
+      <div
+        className={clsx("meter", tone)}
+        role="meter"
+        aria-valuenow={Math.round(ratio * 100)}
+        aria-valuemin={0}
+        aria-valuemax={100}
+        aria-label={typeof label === "string" ? label : undefined}
+      >
         <span style={{ width: `${ratio * 100}%` }} />
       </div>
     </div>
@@ -539,5 +546,180 @@ export function StatusDot({
       <span className={clsx("h-1.5 w-1.5 rounded-full", colors[tone])} />
       {label}
     </span>
+  );
+}
+
+
+// ---------------------------------------------------------------------------
+// Sección de dominio
+// ---------------------------------------------------------------------------
+
+/**
+ * Una sección agrupada por dominio, no una caja más.
+ *
+ * La diferencia con `Card`: aquí el título describe QUÉ se configura
+ * ("Modelo", "Memoria y capacidad"), no el orden en que se llena. El
+ * `rail` marca la sección que se está tocando.
+ */
+export function Section({
+  title,
+  description,
+  actions,
+  children,
+  active,
+  className,
+  bodyClassName,
+}: {
+  title?: ReactNode;
+  description?: ReactNode;
+  actions?: ReactNode;
+  children: ReactNode;
+  active?: boolean;
+  className?: string;
+  bodyClassName?: string;
+}) {
+  return (
+    <section className={clsx("section", active && "section-active", className)}>
+      {(title || actions) && (
+        <header className="flex items-start justify-between gap-4 border-b border-base-800 px-4 py-3">
+          <div className="min-w-0">
+            {title && (
+              <h2 className="flex items-center gap-2 text-[0.8125rem] font-semibold tracking-tight text-ink-100">
+                {active && <span className="rail -ml-4 pl-2" aria-hidden />}
+                {title}
+              </h2>
+            )}
+            {description && (
+              <p className="mt-1 text-xs leading-relaxed text-ink-400">{description}</p>
+            )}
+          </div>
+          {actions && <div className="flex shrink-0 items-center gap-2">{actions}</div>}
+        </header>
+      )}
+      <div className={clsx("p-4", bodyClassName)}>{children}</div>
+    </section>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Diálogo de entrada de texto
+// ---------------------------------------------------------------------------
+
+/**
+ * Sustituye a `window.prompt`: un diálogo del sistema operativo dentro de
+ * una app de escritorio rompe la experiencia y tiene el peor contraste
+ * posible.
+ */
+export function PromptDialog({
+  open,
+  title,
+  label,
+  defaultValue,
+  placeholder,
+  confirmLabel = "Guardar",
+  onConfirm,
+  onCancel,
+}: {
+  open: boolean;
+  title: string;
+  label?: string;
+  defaultValue?: string;
+  placeholder?: string;
+  confirmLabel?: string;
+  onConfirm: (value: string) => void;
+  onCancel: () => void;
+}) {
+  const [value, setValue] = useState(defaultValue ?? "");
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (open) {
+      setValue(defaultValue ?? "");
+      // El foco entra en el campo al abrirse: se puede escribir de inmediato.
+      setTimeout(() => inputRef.current?.select(), 30);
+    }
+  }, [open, defaultValue]);
+
+  if (!open) return null;
+
+  const submit = () => {
+    const v = value.trim();
+    if (v) onConfirm(v);
+  };
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-[2px]"
+      onClick={onCancel}
+      role="dialog"
+      aria-modal="true"
+    >
+      <div
+        className="card w-full max-w-sm overflow-hidden shadow-float"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <header className="border-b border-base-800 px-4 py-3">
+          <h2 className="text-[0.8125rem] font-semibold text-ink-100">{title}</h2>
+        </header>
+        <div className="space-y-3 p-4">
+          {label && <label className="label">{label}</label>}
+          <input
+            ref={inputRef}
+            className="field"
+            value={value}
+            placeholder={placeholder}
+            onChange={(e) => setValue(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") submit();
+              if (e.key === "Escape") onCancel();
+            }}
+          />
+        </div>
+        <footer className="flex justify-end gap-2 border-t border-base-800 px-4 py-3">
+          <Button variant="quiet" onClick={onCancel}>
+            Cancelar
+          </Button>
+          <Button variant="primary" onClick={submit} disabled={!value.trim()}>
+            {confirmLabel}
+          </Button>
+        </footer>
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Par clave-valor
+// ---------------------------------------------------------------------------
+
+/** Una fila de dato. Para listas densas de especificaciones. */
+export function KeyValue({
+  label,
+  value,
+  mono,
+  tone,
+}: {
+  label: string;
+  value: ReactNode;
+  mono?: boolean;
+  tone?: "accent" | "warn" | "danger";
+}) {
+  return (
+    <div className="flex items-baseline justify-between gap-4 py-1">
+      <dt className="shrink-0 text-xs text-ink-400">{label}</dt>
+      <dd
+        className={clsx(
+          "min-w-0 truncate text-right text-xs",
+          mono && "mono tabular-nums",
+          tone === "accent" && "text-accent-400",
+          tone === "warn" && "text-warn-400",
+          tone === "danger" && "text-danger-400",
+          !tone && "text-ink-100",
+        )}
+        title={typeof value === "string" ? value : undefined}
+      >
+        {value}
+      </dd>
+    </div>
   );
 }

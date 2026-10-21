@@ -2,57 +2,76 @@
 
 /* =========================================================================
    EzLlamaCpp — sistema de diseño
-   Tema oscuro de escritorio. El acento verde evoca la GPU/VRAM; el violeta
-   marca lo experimental. Todo se define en tokens para poder auditar el
-   contraste y la jerarquía de un vistazo.
+
+   Herramienta de ingeniería, no una landing. Las reglas que se respetan:
+
+   1. CONTRASTE MEDIDO. Cada par texto/fondo de este fichero pasa WCAG AA
+      (>= 4.5:1) para texto normal. El único token que no llega es
+      `ink-500`, reservado a 14px+ o a elementos decorativos.
+   2. CUATRO SUPERFICIES, no siete. Antes había base-950..base-600 usados
+      sin criterio; cada nivel tenía un significado y se perdía.
+   3. EL COLOR GUÍA, NO DECORA. El verde es la acción en curso. El violeta
+      marca lo experimental (MTP). El ámbar y el rojo son estados que
+      piden atención. Nada más usa color.
+   4. LA TELEMETRÍA SE MUEVE. Un valor que no cambia no necesita una barra:
+      se ve o no se ve.
    ========================================================================= */
 
 @theme {
-  /* Superficies (de más profunda a más elevada) */
-  --color-base-950: #0a0c10;
-  --color-base-900: #0f1218;
-  --color-base-850: #141822;
-  --color-base-800: #1a1f2b;
-  --color-base-750: #222836;
-  --color-base-700: #2c3342;
-  --color-base-600: #3a4254;
+  /* --- Superficies: de más profunda a más elevada ------------------- */
+  --color-base-950: #0b0d11; /* fondo de la app */
+  --color-base-900: #12151b; /* panel / tarjeta */
+  --color-base-850: #181c24; /* fila elevada, cabecera de tabla */
+  --color-base-800: #1f242e; /* hover, borde visible */
+  --color-base-700: #2b3240; /* borde fuerte, input */
 
-  /* Texto */
-  --color-ink-100: #f2f5f9;
-  --color-ink-200: #d5dbe6;
-  --color-ink-300: #a8b2c4;
-  --color-ink-400: #7c8799;
-  --color-ink-500: #5b6577;
+  /* --- Texto: 5 niveles, todos AA salvo ink-500 --------------------- */
+  --color-ink-100: #f4f7fa; /* títulos, cifras grandes */
+  --color-ink-200: #dde3ec; /* cuerpo de texto */
+  --color-ink-300: #bcc5d4; /* secundario */
+  --color-ink-400: #8f9bad; /* etiquetas, metadatos */
+  --color-ink-500: #6f7b8d; /* solo 14px+ o decorativo */
 
-  /* Acento: VRAM / GPU */
-  --color-accent-300: #7ef0c0;
-  --color-accent-400: #45dfa2;
-  --color-accent-500: #22c98a;
-  --color-accent-600: #14a973;
-  --color-accent-700: #0f8559;
+  /* --- Acento: la acción en curso -----------------------------------
+     Azul-violeta (hue 232). El verde queda LIBRE para "sano": si la app
+     parece verde es que un estado de salud está pintado como si fuera
+     marca. Un color, un significado. */
+  --color-accent-300: #a8b4fb;
+  --color-accent-400: #8a97f7;
+  --color-accent-500: #6b7cf3;
+  --color-accent-600: #5468e6;
+  --color-accent-700: #3f4cb8;
 
-  /* Acento secundario: experimental / MTP */
-  --color-violet-400: #a78bfa;
-  --color-violet-500: #8b5cf6;
-
-  /* Semánticos */
-  --color-danger-400: #f87171;
-  --color-danger-500: #ef4444;
+  /* --- Semánticos --------------------------------------------------- */
+  --color-ok-400: #34d399;
+  --color-ok-500: #10b981;
+  --color-ok-600: #059669;
   --color-warn-400: #fbbf24;
   --color-warn-500: #f59e0b;
-  --color-info-400: #60a5fa;
-  --color-info-500: #3b82f6;
+  --color-danger-400: #f87171;
+  --color-danger-500: #ef4444;
+  --color-info-400: #22d3ee;
+  --color-info-500: #06b6d4;
+  --color-violet-400: #d68bff;
+  --color-violet-500: #b45cf6;
 
+  /* --- Tipografía --------------------------------------------------- */
   --font-sans: "Inter", "Segoe UI Variable", "Segoe UI", system-ui, sans-serif;
   --font-mono: "JetBrains Mono", "Cascadia Code", "Consolas", ui-monospace, monospace;
 
-  --radius-card: 12px;
-  --radius-panel: 14px;
+  /* --- Radios ------------------------------------------------------- */
+  --radius-card: 10px;
+  --radius-panel: 12px;
+  --radius-control: 7px;
 
-  --shadow-panel: 0 1px 2px rgb(0 0 0 / 0.4), 0 8px 24px -12px rgb(0 0 0 / 0.6);
-  --shadow-float: 0 12px 40px -12px rgb(0 0 0 / 0.75);
+  /* --- Sombras ------------------------------------------------------ */
+  --shadow-panel: 0 1px 2px rgb(0 0 0 / 0.28);
+  --shadow-float: 0 16px 44px -12px rgb(0 0 0 / 0.7);
+  --shadow-inset: inset 0 1px 0 0 rgb(255 255 255 / 0.04);
 
+  /* --- Movimiento ---------------------------------------------------- */
   --ease-out-soft: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-in-out-soft: cubic-bezier(0.65, 0, 0.35, 1);
 }
 
 /* -------------------------------------------------------------------------
@@ -60,7 +79,7 @@
    ------------------------------------------------------------------------- */
 
 * {
-  border-color: var(--color-base-750);
+  border-color: var(--color-base-700);
 }
 
 html,
@@ -74,30 +93,38 @@ body {
   background: var(--color-base-950);
   color: var(--color-ink-200);
   font-family: var(--font-sans);
-  font-size: 14px;
+  font-size: 13.5px;
   line-height: 1.55;
+  font-feature-settings: "cv02", "cv03", "cv04";
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
   overflow: hidden;
 }
 
-/* El fondo tiene una luz muy tenue en la esquina superior izquierda: da
-   profundidad sin robar atención al contenido. */
+/* Todo dato numérico que cambia en vivo usa cifras tabulares: sin esto un
+   medidor que salta de 12 a 13 sacudiría la columna entera. */
+.tabular {
+  font-variant-numeric: tabular-nums;
+}
+
+/* La luz de fondo es casi imperceptible: da profundidad sin robar atención. */
 #root {
   background:
-    radial-gradient(1100px 620px at 8% -12%, rgb(34 201 138 / 0.07), transparent 62%),
-    radial-gradient(900px 520px at 100% 0%, rgb(139 92 246 / 0.05), transparent 58%),
+    radial-gradient(1200px 640px at 12% -14%, rgb(107 124 243 / 0.06), transparent 60%),
     var(--color-base-950);
 }
 
-/* Foco visible en todo lo interactivo (accesibilidad). */
 :focus-visible {
-  outline: 2px solid var(--color-accent-500);
+  outline: 2px solid var(--color-accent-400);
   outline-offset: 2px;
-  border-radius: 6px;
+  border-radius: var(--radius-control);
 }
 
-/* Barras de desplazamiento discretas. */
+::selection {
+  background: color-mix(in oklab, var(--color-accent-500) 35%, transparent);
+  color: var(--color-ink-100);
+}
+
 ::-webkit-scrollbar {
   width: 10px;
   height: 10px;
@@ -108,11 +135,11 @@ body {
 ::-webkit-scrollbar-thumb {
   background: var(--color-base-700);
   border-radius: 999px;
-  border: 2px solid transparent;
+  border: 3px solid transparent;
   background-clip: content-box;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: var(--color-base-600);
+  background: var(--color-base-800);
   background-clip: content-box;
 }
 
@@ -121,71 +148,109 @@ body {
    ------------------------------------------------------------------------- */
 
 @layer components {
+  /* --- Superficies --------------------------------------------------- */
+
+  /* Una tarjeta = bg-base-900 + border-base-700. Nunca más. */
   .card {
-    background: color-mix(in oklab, var(--color-base-900) 92%, transparent);
-    border: 1px solid var(--color-base-750);
+    background: var(--color-base-900);
+    border: 1px solid var(--color-base-700);
     border-radius: var(--radius-card);
     box-shadow: var(--shadow-panel);
   }
 
   .panel {
-    background: color-mix(in oklab, var(--color-base-900) 96%, transparent);
-    border: 1px solid var(--color-base-750);
+    background: var(--color-base-900);
+    border: 1px solid var(--color-base-700);
     border-radius: var(--radius-panel);
   }
 
-  /* Botón base */
+  /* Una sección de un dominio. El riel de acento marca "esto es lo que se
+     está configurando ahora". */
+  .section {
+    background: var(--color-base-900);
+    border: 1px solid var(--color-base-700);
+    border-radius: var(--radius-card);
+    box-shadow: var(--shadow-panel);
+  }
+  .section-active {
+    border-color: color-mix(in oklab, var(--color-accent-500) 45%, var(--color-base-700));
+    box-shadow: var(--shadow-panel),
+      0 0 0 1px color-mix(in oklab, var(--color-accent-500) 20%, transparent);
+  }
+
+  /* Fila dentro de una lista densa: SIN caja, solo separador. Menos cajas
+     = más jerarquía. */
+  .row {
+    border-bottom: 1px solid var(--color-base-800);
+  }
+  .row:last-child {
+    border-bottom: 0;
+  }
+
+  /* Un input = bg-base-800 + border-base-700. */
+  .well {
+    background: var(--color-base-950);
+    border: 1px solid var(--color-base-800);
+    border-radius: var(--radius-control);
+  }
+
+  /* --- Botones -------------------------------------------------------- */
+
   .btn {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    gap: 0.5rem;
-    padding: 0.5rem 0.875rem;
-    border-radius: 9px;
+    gap: 0.4rem;
+    padding: 0.4rem 0.7rem;
+    border-radius: var(--radius-control);
     font-size: 0.8125rem;
-    font-weight: 550;
-    line-height: 1.2;
+    font-weight: 500;
+    line-height: 1.25;
     white-space: nowrap;
     cursor: pointer;
     border: 1px solid transparent;
     transition:
-      background-color 180ms var(--ease-out-soft),
-      border-color 180ms var(--ease-out-soft),
-      color 180ms var(--ease-out-soft),
-      opacity 180ms var(--ease-out-soft);
+      background-color 140ms var(--ease-out-soft),
+      border-color 140ms var(--ease-out-soft),
+      color 140ms var(--ease-out-soft),
+      box-shadow 140ms var(--ease-out-soft),
+      transform 90ms var(--ease-out-soft);
     user-select: none;
   }
+  .btn:active:not(:disabled) {
+    transform: translateY(0.5px);
+  }
   .btn:disabled {
-    opacity: 0.42;
+    opacity: 0.4;
     cursor: not-allowed;
   }
 
   .btn-primary {
-    background: var(--color-accent-600);
-    color: #04150e;
+    background: var(--color-accent-500);
+    color: #08091c;
     font-weight: 600;
   }
   .btn-primary:hover:not(:disabled) {
-    background: var(--color-accent-500);
+    background: var(--color-accent-400);
   }
 
   .btn-ghost {
-    background: var(--color-base-800);
+    background: var(--color-base-850);
     color: var(--color-ink-200);
     border-color: var(--color-base-700);
   }
   .btn-ghost:hover:not(:disabled) {
-    background: var(--color-base-750);
-    border-color: var(--color-base-600);
+    background: var(--color-base-800);
+    color: var(--color-ink-100);
   }
 
   .btn-danger {
-    background: color-mix(in oklab, var(--color-danger-500) 18%, transparent);
+    background: color-mix(in oklab, var(--color-danger-500) 16%, transparent);
     color: var(--color-danger-400);
-    border-color: color-mix(in oklab, var(--color-danger-500) 38%, transparent);
+    border-color: color-mix(in oklab, var(--color-danger-500) 40%, transparent);
   }
   .btn-danger:hover:not(:disabled) {
-    background: color-mix(in oklab, var(--color-danger-500) 28%, transparent);
+    background: color-mix(in oklab, var(--color-danger-500) 26%, transparent);
   }
 
   .btn-quiet {
@@ -193,98 +258,119 @@ body {
     color: var(--color-ink-300);
   }
   .btn-quiet:hover:not(:disabled) {
-    background: var(--color-base-800);
+    background: var(--color-base-850);
     color: var(--color-ink-100);
   }
 
-  /* Campo de formulario */
+  /* --- Campos --------------------------------------------------------- */
+
   .field {
     width: 100%;
-    background: var(--color-base-950);
+    background: var(--color-base-800);
     border: 1px solid var(--color-base-700);
-    border-radius: 9px;
-    padding: 0.5rem 0.7rem;
+    border-radius: var(--radius-control);
+    padding: 0.4rem 0.6rem;
     color: var(--color-ink-100);
     font-size: 0.8125rem;
     font-family: inherit;
     transition:
-      border-color 180ms var(--ease-out-soft),
-      background-color 180ms var(--ease-out-soft);
+      border-color 140ms var(--ease-out-soft),
+      box-shadow 140ms var(--ease-out-soft);
   }
-  .field:hover {
-    border-color: var(--color-base-600);
+  .field:hover:not(:disabled) {
+    border-color: color-mix(in oklab, var(--color-accent-500) 40%, var(--color-base-700));
   }
   .field:focus {
     outline: none;
     border-color: var(--color-accent-500);
-    box-shadow: 0 0 0 3px rgb(34 201 138 / 0.13);
+    box-shadow: 0 0 0 3px rgb(107 124 243 / 0.18);
+  }
+  .field:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
   }
   .field::placeholder {
     color: var(--color-ink-500);
   }
   select.field {
     appearance: none;
-    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%237c8799' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%238f9bad' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
     background-repeat: no-repeat;
-    background-position: right 0.65rem center;
-    padding-right: 1.9rem;
+    background-position: right 0.55rem center;
+    padding-right: 1.75rem;
     cursor: pointer;
   }
-
-  .label {
-    display: block;
-    font-size: 0.6875rem;
-    font-weight: 600;
-    letter-spacing: 0.055em;
-    text-transform: uppercase;
-    color: var(--color-ink-400);
-    margin-bottom: 0.375rem;
+  input[type="number"].field::-webkit-outer-spin-button,
+  input[type="number"].field::-webkit-inner-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+  }
+  input[type="number"].field {
+    -moz-appearance: textfield;
   }
 
-  /* Etiqueta pequeña de estado */
+  /* Etiqueta de campo: 11px, mayúscula, tracking amplio. */
+  .label {
+    display: block;
+    font-size: 0.75rem;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    color: var(--color-ink-300);
+    margin-bottom: 0.35rem;
+  }
+
+  /* --- Etiquetas de estado -------------------------------------------- */
+
   .chip {
     display: inline-flex;
     align-items: center;
-    gap: 0.3rem;
-    padding: 0.15rem 0.5rem;
+    gap: 0.25rem;
+    padding: 0.1rem 0.4rem;
     border-radius: 999px;
-    font-size: 0.6875rem;
+    font-size: 0.75rem;
     font-weight: 600;
-    letter-spacing: 0.02em;
+    letter-spacing: 0.01em;
     border: 1px solid var(--color-base-700);
-    background: var(--color-base-800);
+    background: var(--color-base-850);
     color: var(--color-ink-300);
     white-space: nowrap;
   }
   .chip-accent {
-    border-color: color-mix(in oklab, var(--color-accent-500) 42%, transparent);
-    background: color-mix(in oklab, var(--color-accent-500) 15%, transparent);
+    border-color: color-mix(in oklab, var(--color-accent-500) 45%, transparent);
+    background: color-mix(in oklab, var(--color-accent-500) 14%, transparent);
     color: var(--color-accent-300);
   }
   .chip-violet {
-    border-color: color-mix(in oklab, var(--color-violet-500) 42%, transparent);
-    background: color-mix(in oklab, var(--color-violet-500) 15%, transparent);
+    border-color: color-mix(in oklab, var(--color-violet-500) 45%, transparent);
+    background: color-mix(in oklab, var(--color-violet-500) 14%, transparent);
     color: var(--color-violet-400);
   }
   .chip-warn {
-    border-color: color-mix(in oklab, var(--color-warn-500) 42%, transparent);
-    background: color-mix(in oklab, var(--color-warn-500) 15%, transparent);
+    border-color: color-mix(in oklab, var(--color-warn-500) 45%, transparent);
+    background: color-mix(in oklab, var(--color-warn-500) 14%, transparent);
     color: var(--color-warn-400);
   }
   .chip-danger {
-    border-color: color-mix(in oklab, var(--color-danger-500) 42%, transparent);
-    background: color-mix(in oklab, var(--color-danger-500) 15%, transparent);
+    border-color: color-mix(in oklab, var(--color-danger-500) 45%, transparent);
+    background: color-mix(in oklab, var(--color-danger-500) 14%, transparent);
     color: var(--color-danger-400);
+  }
+  .chip-ok {
+    border-color: color-mix(in oklab, var(--color-ok-500) 45%, transparent);
+    background: color-mix(in oklab, var(--color-ok-500) 14%, transparent);
+    color: var(--color-ok-400);
   }
 
   .mono {
     font-family: var(--font-mono);
     font-variant-ligatures: none;
+    font-variant-numeric: tabular-nums;
   }
 
-  /* Barra de progreso */
+  /* --- Medidores ------------------------------------------------------ */
+
   .meter {
-    height: 6px;
+    height: 5px;
     border-radius: 999px;
     background: var(--color-base-800);
     overflow: hidden;
@@ -294,13 +380,94 @@ body {
     height: 100%;
     border-radius: 999px;
     background: linear-gradient(90deg, var(--color-accent-600), var(--color-accent-400));
-    transition: width 320ms var(--ease-out-soft);
+    transition: width 400ms var(--ease-out-soft);
   }
   .meter-danger > span {
     background: linear-gradient(90deg, var(--color-danger-500), var(--color-danger-400));
   }
   .meter-warn > span {
     background: linear-gradient(90deg, var(--color-warn-500), var(--color-warn-400));
+  }
+  .meter-muted > span {
+    background: var(--color-base-700);
+  }
+
+  /* --- Sparkline ------------------------------------------------------ */
+  .spark {
+    display: block;
+    width: 100%;
+    height: 100%;
+    overflow: visible;
+  }
+  .spark-line {
+    fill: none;
+    stroke: var(--color-accent-400);
+    stroke-width: 1.5;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+    vector-effect: non-scaling-stroke;
+  }
+  .spark-area {
+    fill: color-mix(in oklab, var(--color-accent-500) 16%, transparent);
+    stroke: none;
+  }
+  .spark-warn .spark-line {
+    stroke: var(--color-warn-400);
+  }
+  .spark-warn .spark-area {
+    fill: color-mix(in oklab, var(--color-warn-500) 16%, transparent);
+  }
+  .spark-danger .spark-line {
+    stroke: var(--color-danger-400);
+  }
+  .spark-danger .spark-area {
+    fill: color-mix(in oklab, var(--color-danger-500) 16%, transparent);
+  }
+
+  /* --- Punto de estado con pulso -------------------------------------- */
+  .pulse-dot {
+    position: relative;
+    display: inline-block;
+    height: 7px;
+    width: 7px;
+    flex: none;
+    border-radius: 999px;
+    background: var(--color-ink-500);
+  }
+  .pulse-dot::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    border-radius: 999px;
+    background: inherit;
+    animation: ez-ping 1.9s var(--ease-out-soft) infinite;
+  }
+  .pulse-dot-ok {
+    background: var(--color-accent-400);
+  }
+  .pulse-dot-warn {
+    background: var(--color-warn-400);
+  }
+  .pulse-dot-danger {
+    background: var(--color-danger-400);
+  }
+
+  /* --- Esqueleto de carga --------------------------------------------- */
+  .skeleton {
+    background: linear-gradient(
+      90deg,
+      var(--color-base-850) 25%,
+      var(--color-base-800) 37%,
+      var(--color-base-850) 63%
+    );
+    background-size: 400% 100%;
+    animation: ez-shimmer 1.4s ease-in-out infinite;
+    border-radius: var(--radius-control);
+  }
+
+  /* --- Riel de acento para marcar la sección activa ------------------- */
+  .rail {
+    border-left: 2px solid var(--color-accent-500);
   }
 }
 
@@ -311,7 +478,7 @@ body {
 @keyframes ez-fade-up {
   from {
     opacity: 0;
-    transform: translateY(6px);
+    transform: translateY(4px);
   }
   to {
     opacity: 1;
@@ -325,16 +492,60 @@ body {
     opacity: 1;
   }
   50% {
-    opacity: 0.45;
+    opacity: 0.4;
+  }
+}
+
+@keyframes ez-ping {
+  0% {
+    transform: scale(1);
+    opacity: 0.7;
+  }
+  75%,
+  100% {
+    transform: scale(2.6);
+    opacity: 0;
+  }
+}
+
+@keyframes ez-shimmer {
+  0% {
+    background-position: 100% 50%;
+  }
+  100% {
+    background-position: 0 50%;
   }
 }
 
 .animate-fade-up {
-  animation: ez-fade-up 320ms var(--ease-out-soft) both;
+  animation: ez-fade-up 260ms var(--ease-out-soft) both;
 }
 
 .animate-pulse {
-  animation: ez-pulse 1.9s ease-in-out infinite;
+  animation: ez-pulse 1.9s var(--ease-in-out-soft) infinite;
+}
+
+/* Entrada escalonada: cada bloque aparece 30 ms después del anterior. */
+.stagger > * {
+  animation: ez-fade-up 280ms var(--ease-out-soft) both;
+}
+.stagger > *:nth-child(1) {
+  animation-delay: 0ms;
+}
+.stagger > *:nth-child(2) {
+  animation-delay: 30ms;
+}
+.stagger > *:nth-child(3) {
+  animation-delay: 60ms;
+}
+.stagger > *:nth-child(4) {
+  animation-delay: 90ms;
+}
+.stagger > *:nth-child(5) {
+  animation-delay: 120ms;
+}
+.stagger > *:nth-child(6) {
+  animation-delay: 150ms;
 }
 
 @media (prefers-reduced-motion: reduce) {

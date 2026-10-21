@@ -1,19 +1,11 @@
 import { useCallback, useEffect, useState } from "react";
-import {
-  ArrowRight,
-  Cpu,
-  Download,
-  Layers,
-  MemoryStick,
-  Play,
-  Settings2,
-  Square,
-  Zap,
-} from "lucide-react";
+import { Activity, Cpu, Gauge, Play, Zap } from "lucide-react";
 
-import { Button, Card, Meter, StatusDot, useToast } from "../components/ui";
-import { basename, formatBytes, formatElapsed, formatNumber } from "../lib/format";
+import { Button, Section, useToast } from "../components/ui";
+import { LiveMeter, Pulse, Readout, Sparkline } from "../components/Telemetry";
+import { basename, formatBytes } from "../lib/format";
 import { api } from "../lib/api";
+import { useTelemetry } from "../lib/useTelemetry";
 import type { Deployment, HardwareReport, ServerStatus } from "../types";
 
 type NavTarget = "dashboard" | "deploy" | "releases" | "settings";
@@ -23,35 +15,28 @@ export default function DashboardView({
   server,
   selectedModel,
   onNavigate,
-  onStart,
-  onStop,
-  busy,
 }: {
   hardware: HardwareReport | null;
   server: ServerStatus | null;
   selectedModel: string | null;
   onNavigate: (v: NavTarget) => void;
-  onStart: () => void;
-  onStop: () => void;
-  busy: boolean;
 }) {
   const toast = useToast();
   const [deployments, setDeployments] = useState<Deployment[]>([]);
+  const [probing, setProbing] = useState(false);
 
-  // Los despliegues tambien se ven aqui: aplicar uno y arrancar, sin
-  // saltar a otra seccion.
+  // Telemetría viva: 1 Hz. Todo lo que se muestra aquí está medido.
+  const tel = useTelemetry(true, 1);
+
   useEffect(() => {
-    api
-      .listDeployments()
-      .then(setDeployments)
-      .catch(() => {});
+    api.listDeployments().then(setDeployments).catch(() => {});
   }, []);
 
   const applyDeployment = useCallback(
     async (d: Deployment) => {
       try {
         await api.applyDeployment(d.id);
-        toast.push(`"${d.name}" listo. Ya puedes arrancar.`, "success");
+        toast.push(`«${d.name}» cargado. Ya puedes arrancar.`, "success");
         setDeployments(await api.listDeployments());
       } catch (e) {
         toast.push(`No se pudo aplicar: ${String(e)}`, "danger");
@@ -59,323 +44,333 @@ export default function DashboardView({
     },
     [toast],
   );
-  const gpu = hardware?.gpu[0];
 
-  const steps: {
-    id: NavTarget;
-    title: string;
-    description: string;
-    done: boolean;
-    cta: string;
-  }[] = [
-    {
-      id: "releases",
-      title: "Instala llama.cpp",
-      description: "Descarga los binarios oficiales de tu plataforma.",
-      done: !!hardware?.llamaServer,
-      cta: "Ver versiones",
-    },
-    {
-      id: "deploy",
-      title: "Elige y configura tu modelo",
-      description: "Modelo, mmproj, MTP, configuración y presets en un solo lugar.",
-      done: !!selectedModel,
-      cta: "Abrir despliegue",
-    },
-  ];
+  const probe = useCallback(async () => {
+    setProbing(true);
+    await tel.measureSpeed();
+    setProbing(false);
+  }, [tel]);
+
+  const snap = tel.snapshot;
+  const cpuPct = snap?.cpu.percent ?? 0;
+  const ramUsed = snap?.ram.usedBytes ?? 0;
+  const ramTotal = snap?.ram.totalBytes ?? 0;
+
+  // VRAM: se mide con la misma API que usa llama.cpp.
+  const gpus = snap?.gpus ?? hardware?.gpu ?? [];
+  const vramTotal = gpus.reduce((a, g) => a + g.vramTotalMib, 0);
+
+  const running = !!server?.running;
 
   return (
-    <div className="space-y-5">
-      <header>
-        <h1 className="text-lg font-semibold tracking-tight text-ink-100">Panel</h1>
-        <p className="mt-1 text-xs leading-relaxed text-ink-400">
-          Todo lo que EzLlamaCpp sabe de tu equipo y de tu servidor, en un vistazo.
-        </p>
+    <div className="space-y-4 animate-fade-up">
+      <header className="flex flex-wrap items-end justify-between gap-4">
+        <div>
+          <h1 className="text-lg font-semibold tracking-tight text-ink-100">Panel</h1>
+          <p className="mt-1 text-xs text-ink-400">
+            Estado medido del equipo y del servidor. Los valores se releen cada
+            segundo.
+          </p>
+        </div>
+        <Pulse
+          tone={running ? (server?.health ? "ok" : "warn") : "idle"}
+          label={
+            running
+              ? server?.health
+                ? "Servidor sano"
+                : "Cargando el modelo"
+              : "Servidor detenido"
+          }
+        />
       </header>
 
-      {/* --- Estado del servidor --- */}
-      <Card
+      {/* ================= SERVIDOR ================= */}
+      <Section
         title="Servidor"
-        subtitle={
-          server?.running
-            ? `En marcha desde hace ${formatElapsed(server.startedAt)}`
-            : "Detenido"
-        }
-        actions={
-          server?.running ? (
-            <Button variant="danger" size="sm" icon={<Square size={12} />} onClick={onStop} loading={busy}>
-              Detener
-            </Button>
-          ) : (
-            <Button variant="primary" size="sm" icon={<Play size={12} />} onClick={onStart} loading={busy}>
-              Arrancar
-            </Button>
-          )
-        }
+        description="El proceso de llama-server y lo que está sirviendo ahora mismo."
       >
-        <div className="grid gap-4 sm:grid-cols-3">
-          <Stat
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          <Readout
             label="Estado"
-            value={
-              server?.running ? (server.health ? "Sana" : "Cargando") : "Detenido"
+            value={running ? (server?.health ? "Sano" : "Cargando") : "Detenido"}
+            tone={running ? (server?.health ? "accent" : "warn") : "default"}
+            hint={
+              running
+                ? `Activo desde hace ${elapsed(server?.startedAt)}`
+                : "El botón de la barra lateral lo arranca."
             }
-            icon={<Zap size={13} />}
-            tone={server?.running ? (server.health ? "ok" : "warn") : "idle"}
           />
-          <Stat
+          <Readout
             label="Dirección"
-            value={server?.running ? `http://${server.host}:${server.port}` : "—"}
-            mono
+            value={running ? `${server?.host}:${server?.port}` : "—"}
+            hint={running ? "Escucha en este puerto" : undefined}
           />
-          <Stat
-            label="Modelo cargado"
+          <Readout
+            label="Modelo"
             value={
-              server?.models.length ? server.models.join(", ") : selectedModel ? basename(selectedModel) : "—"
+              server?.models.length
+                ? basename(server.models[0])
+                : selectedModel
+                  ? basename(selectedModel)
+                  : "—"
+            }
+            hint={server?.models.length ? "Cargado en memoria" : "Seleccionado, no cargado"}
+          />
+          <Readout
+            label="Slots"
+            value={tel.slots ? `${tel.slots.busy}/${tel.slots.total}` : "—"}
+            tone={tel.slots && tel.slots.busy > 0 ? "accent" : "default"}
+            hint={
+              tel.slots
+                ? `${tel.slots.nCtx.toLocaleString("es-ES")} tokens por slot`
+                : "Requiere un servidor en marcha"
             }
           />
         </div>
-      </Card>
 
-      {/* --- Hardware --- */}
+        {running && (
+          <div className="mt-4 flex flex-wrap items-center gap-2 border-t border-base-800 pt-3">
+            <Button
+              size="sm"
+              variant="ghost"
+              icon={<Gauge size={12} />}
+              onClick={probe}
+              loading={probing}
+            >
+              Medir velocidad
+            </Button>
+            {tel.speed && (
+              <span className="mono text-[0.75rem] text-ink-300">
+                {tel.speed.predictedPerSecond.toFixed(1)} tok/s generación ·{" "}
+                {tel.speed.promptPerSecond.toFixed(0)} tok/s prompt
+              </span>
+            )}
+          </div>
+        )}
+      </Section>
+
+      {/* ================= RECURSOS ================= */}
       <div className="grid gap-4 lg:grid-cols-2">
-        <Card title="Tarjeta gráfica" subtitle={gpu?.source}>
-          {!gpu ? (
-            <p className="py-4 text-center text-xs text-ink-500">
+        {/* GPU */}
+        <Section
+          title="Tarjetas gráficas"
+          description="VRAM real, leída con la misma API que usa llama.cpp."
+        >
+          {gpus.length === 0 ? (
+            <p className="py-6 text-center text-xs text-ink-400">
               No se ha detectado ninguna GPU. Instala llama.cpp para consultarla.
             </p>
           ) : (
-            <div className="space-y-3">
-              {(hardware?.gpu ?? []).map((g, i) => (
-                <div key={i} className="space-y-2.5">
-                  {i > 0 && <div className="border-t border-base-800 pt-2.5" />}
-                  <div className="flex items-start gap-2.5">
-                    <span className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-accent-600/15 text-accent-400">
-                      <Zap size={15} />
-                    </span>
-                    <div className="min-w-0 flex-1">
-                      <p className="text-xs font-medium text-ink-100">{g.name}</p>
-                      <p className="mt-0.5 flex flex-wrap items-center gap-1.5 text-[0.6875rem] text-ink-500">
-                        <span className="mono uppercase">
-                          {g.api}
-                          {g.index}
-                        </span>
-                        <span className="chip">
-                          {g.kind === "discrete"
-                            ? "Dedicada"
-                            : g.kind === "integrated"
-                              ? "Integrada"
-                              : g.kind}
-                        </span>
-                        {g.vramTotalMib > 0 && (
-                          <span className="mono">
-                            {(g.vramTotalMib / 1024).toFixed(1)} GB
+            <div className="space-y-4">
+              {gpus.map((g, i) => {
+                const used = g.vramTotalMib - g.vramFreeMib;
+                const ratio = g.vramTotalMib > 0 ? used / g.vramTotalMib : 0;
+                return (
+                  <div key={i} className={clsxJoin(i > 0 && "border-t border-base-800 pt-4")}>
+                    <div className="mb-2 flex items-center gap-2.5">
+                      <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-accent-500/12 text-accent-400">
+                        <Zap size={13} />
+                      </span>
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate text-xs font-medium text-ink-100">
+                          {g.name}
+                        </p>
+                        <p className="mt-0.5 flex flex-wrap items-center gap-1.5 text-[0.75rem] text-ink-400">
+                          <span className="mono uppercase">
+                            {g.api}
+                            {g.index}
                           </span>
-                        )}
-                      </p>
+                          <span className="chip">
+                            {g.kind === "discrete"
+                              ? "Dedicada"
+                              : g.kind === "integrated"
+                                ? "Integrada"
+                                : g.kind}
+                          </span>
+                        </p>
+                      </div>
                     </div>
+                    {g.vramTotalMib > 0 ? (
+                      <>
+                        <LiveMeter
+                          value={used}
+                          max={g.vramTotalMib}
+                          label="VRAM en uso"
+                          valueLabel={`${formatBytes(used * 1024 * 1024)} / ${formatBytes(g.vramTotalMib * 1024 * 1024)}`}
+                          tone={ratio > 0.95 ? "danger" : ratio > 0.85 ? "warn" : undefined}
+                        />
+                        <div className="mt-2 h-8">
+                          <Sparkline
+                            samples={tel.vramSeries.values()}
+                            height={32}
+                            tone={ratio > 0.95 ? "danger" : ratio > 0.85 ? "warn" : undefined}
+                          />
+                        </div>
+                      </>
+                    ) : (
+                      <p className="text-[0.75rem] text-ink-500">
+                        VRAM no disponible desde este dispositivo.
+                      </p>
+                    )}
                   </div>
-                  {g.vramTotalMib > 0 && (
-                    <Meter
-                      value={g.vramTotalMib - g.vramFreeMib}
-                      max={g.vramTotalMib}
-                      label="VRAM en uso"
-                      valueLabel={`${formatBytes((g.vramTotalMib - g.vramFreeMib) * 1024 * 1024)} / ${formatBytes(g.vramTotalMib * 1024 * 1024)}`}
-                    />
-                  )}
-                </div>
-              ))}
+                );
+              })}
             </div>
           )}
-        </Card>
+        </Section>
 
-        <Card title="Procesador y memoria">
-          <div className="space-y-3">
-            <div className="flex items-start gap-2.5">
-              <span className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-base-800 text-ink-300">
-                <Cpu size={15} />
+        {/* CPU y RAM */}
+        <Section
+          title="Procesador y memoria"
+          description="Uso medido del sistema, actualizado cada segundo."
+        >
+          <div className="space-y-4">
+            <div className="flex items-center gap-2.5">
+              <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-info-500/12 text-info-400">
+                <Cpu size={13} />
               </span>
-              <div className="min-w-0">
-                <p className="text-xs font-medium text-ink-100">
-                  {hardware?.cpu.model ?? "Procesador"}
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-xs font-medium text-ink-100">
+                  {hardware?.cpu.model ?? "—"}
                 </p>
-                <p className="mt-0.5 text-[0.6875rem] text-ink-500">
+                <p className="mt-0.5 text-[0.75rem] text-ink-400">
                   {hardware?.cpu.physicalCores
-                    ? `${hardware.cpu.physicalCores} núcleos físicos · ${hardware.cpu.logicalThreads} hilos lógicos`
-                    : `${hardware?.cpu.logicalThreads ?? "?"} hilos lógicos`}
+                    ? `${hardware.cpu.physicalCores} núcleos físicos · ${hardware.cpu.logicalThreads} hilos`
+                    : `${hardware?.cpu.logicalThreads ?? "?"} hilos`}
                 </p>
               </div>
             </div>
-            {hardware && hardware.ram.totalGb > 0 && (
-              <div className="space-y-2">
-                <div className="flex items-start gap-2.5">
-                  <span className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-base-800 text-ink-300">
-                    <MemoryStick size={15} />
-                  </span>
-                  <div className="min-w-0 flex-1">
-                    <p className="text-xs font-medium text-ink-100">Memoria del sistema</p>
-                    <p className="mt-0.5 text-[0.6875rem] text-ink-500">
-                      {hardware.ram.availableGb.toFixed(1)} GB libres de{" "}
-                      {hardware.ram.totalGb.toFixed(1)} GB
-                    </p>
-                  </div>
-                </div>
-                <Meter
-                  value={hardware.ram.totalGb - hardware.ram.availableGb}
-                  max={hardware.ram.totalGb}
-                  label="RAM en uso"
-                  valueLabel={`${(hardware.ram.totalGb - hardware.ram.availableGb).toFixed(1)} GB`}
+
+            <LiveMeter
+              value={cpuPct}
+              max={100}
+              label="CPU en uso"
+              valueLabel={`${cpuPct.toFixed(0)}%`}
+              tone={cpuPct > 90 ? "danger" : cpuPct > 70 ? "warn" : undefined}
+            />
+            <div className="-mt-1 h-8">
+              <Sparkline
+                samples={tel.cpuSeries.values()}
+                height={32}
+                max={100}
+                tone={cpuPct > 90 ? "danger" : cpuPct > 70 ? "warn" : undefined}
+              />
+            </div>
+
+            <LiveMeter
+              value={ramUsed}
+              max={ramTotal}
+              label="RAM en uso"
+              valueLabel={
+                ramTotal > 0
+                  ? `${formatBytes(ramUsed)} / ${formatBytes(ramTotal)}`
+                  : "—"
+              }
+              tone={
+                ramTotal > 0 && ramUsed / ramTotal > 0.92
+                  ? "danger"
+                  : ramTotal > 0 && ramUsed / ramTotal > 0.8
+                    ? "warn"
+                    : undefined
+              }
+            />
+            <div className="-mt-1 h-8">
+              <Sparkline
+                samples={tel.ramSeries.values()}
+                height={32}
+                max={1}
+                tone={
+                  ramTotal > 0 && ramUsed / ramTotal > 0.92
+                    ? "danger"
+                    : ramTotal > 0 && ramUsed / ramTotal > 0.8
+                      ? "warn"
+                      : undefined
+                }
+              />
+            </div>
+
+            {snap?.process && (
+              <div className="border-t border-base-800 pt-3">
+                <LiveMeter
+                  value={snap.process.workingSetBytes}
+                  max={Math.max(snap.process.workingSetBytes, vramTotal * 1024 * 1024)}
+                  label="Memoria de llama-server"
+                  valueLabel={formatBytes(snap.process.workingSetBytes)}
                 />
               </div>
             )}
           </div>
-        </Card>
+        </Section>
       </div>
 
-      {/* --- Despliegues: aplicar y arrancar, sin salir del Panel --- */}
-      {deployments.length > 0 && (
-        <Card
-          title="Despliegues"
-          subtitle="Aplica uno y arranca. Cada uno trae su modelo y su configuración."
+      {/* ================= DESPLIEGUES ================= */}
+      {deployments.length > 0 ? (
+        <Section
+          title="Despliegues guardados"
+          description="Cada uno trae su modelo y su configuración. Aplica uno y arranca."
         >
-          <ul className="grid gap-2 sm:grid-cols-2">
+          <ul className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
             {deployments.map((d) => (
-              <li
-                key={d.id}
-                className="flex items-center gap-3 rounded-lg border border-base-750 bg-base-850 px-3 py-2.5"
-              >
-                <div className="min-w-0 flex-1">
-                  <p className="truncate text-xs font-medium text-ink-100">{d.name}</p>
-                  <p className="mt-0.5 flex flex-wrap items-center gap-1.5 text-[0.6875rem] text-ink-500">
-                    <span className="mono">ctx {formatNumber(d.server.ctxSize)}</span>
-                    {d.mmprojPath && <span className="chip chip-violet">multimodal</span>}
-                    {d.draftPath && <span className="chip">MTP</span>}
-                  </p>
-                </div>
-                <Button
-                  size="sm"
-                  icon={<Play size={11} />}
+              <li key={d.id}>
+                <button
                   onClick={() => applyDeployment(d)}
+                  className="flex w-full cursor-pointer items-center gap-2.5 rounded-lg border border-base-800 bg-base-950 px-3 py-2.5 text-left transition-colors duration-150 hover:border-accent-500/40 hover:bg-base-850"
                 >
-                  Usar
-                </Button>
+                  <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-accent-500/12 text-accent-400">
+                    <Play size={12} />
+                  </span>
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-xs font-medium text-ink-100">
+                      {d.name}
+                    </span>
+                    <span className="mt-0.5 block truncate text-[0.75rem] text-ink-400">
+                      {d.modelPath ? basename(d.modelPath) : "Sin modelo"} ·{" "}
+                      {(d.server.ctxSize / 1024).toFixed(0)}k ctx
+                    </span>
+                  </span>
+                </button>
               </li>
             ))}
           </ul>
-        </Card>
-      )}
-
-      {/* --- Pasos --- */}
-      <Card title="Puesta en marcha" subtitle="Tres pasos y el servidor responde.">
-        <ol className="space-y-2">
-          {steps.map((step, i) => (
-            <li key={step.id}>
-              <button
-                onClick={() => onNavigate(step.id)}
-                className="group flex w-full cursor-pointer items-center gap-3 rounded-lg border border-base-800 px-3.5 py-3 text-left transition-colors duration-200 hover:border-base-700 hover:bg-base-850"
-              >
-                <span
-                  className={
-                    step.done
-                      ? "flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-accent-600/15 text-[0.6875rem] font-semibold text-accent-400"
-                      : "flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-base-800 text-[0.6875rem] font-semibold text-ink-400"
-                  }
-                >
-                  {step.done ? "✓" : i + 1}
-                </span>
-                <span className="min-w-0 flex-1">
-                  <span className="block text-xs font-medium text-ink-100">{step.title}</span>
-                  <span className="mt-0.5 block text-[0.6875rem] text-ink-500">
-                    {step.description}
-                  </span>
-                </span>
-                <span className="flex shrink-0 items-center gap-1 text-[0.6875rem] font-medium text-ink-400 transition-colors duration-200 group-hover:text-accent-400">
-                  {step.cta}
-                  <ArrowRight size={12} />
-                </span>
-              </button>
-            </li>
-          ))}
-        </ol>
-      </Card>
-
-      {/* --- Atajos --- */}
-      <div className="grid gap-3 sm:grid-cols-3">
-        <Shortcut
-          icon={<Download size={15} />}
-          title="Instalar llama.cpp"
-          description="Binarios oficiales con verificación de hash."
-          onClick={() => onNavigate("releases")}
-        />
-        <Shortcut
-          icon={<Layers size={15} />}
-          title="Buscar modelos"
-          description="Explora tu carpeta y detecta MTP y mmproj."
-          onClick={() => onNavigate("deploy")}
-        />
-        <Shortcut
-          icon={<Settings2 size={15} />}
-          title="Ajustes"
-          description="Rutas, token de GitHub y backend preferido."
-          onClick={() => onNavigate("settings")}
-        />
-      </div>
-    </div>
-  );
-}
-
-function Stat({
-  label,
-  value,
-  icon,
-  mono,
-  tone,
-}: {
-  label: string;
-  value: string;
-  icon?: React.ReactNode;
-  mono?: boolean;
-  tone?: "ok" | "warn" | "idle";
-}) {
-  return (
-    <div className="rounded-lg bg-base-850 px-3 py-2.5">
-      <p className="flex items-center gap-1.5 text-[0.6875rem] font-medium tracking-wide text-ink-500 uppercase">
-        {icon}
-        {label}
-      </p>
-      {tone ? (
-        <div className="mt-1.5">
-          <StatusDot tone={tone} label={value} />
-        </div>
+        </Section>
       ) : (
-        <p className={mono ? "mono mt-1 truncate text-xs text-ink-100" : "mt-1 truncate text-xs text-ink-100"}>
-          {value}
-        </p>
+        <Section
+          title="Despliegues guardados"
+          description="Aún no hay ninguno. Crea uno en Despliegue: un modelo con su configuración."
+          actions={
+            <Button
+              size="sm"
+              icon={<Play size={12} />}
+              onClick={() => onNavigate("deploy")}
+            >
+              Ir a Despliegue
+            </Button>
+          }
+        >
+          <div className="flex flex-col items-center gap-3 py-6 text-center">
+            <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-base-850 text-ink-400">
+              <Activity size={16} />
+            </span>
+            <p className="max-w-sm text-xs leading-relaxed text-ink-400">
+              Un despliegue es un modelo con su configuración guardada. Elige
+              un GGUF, ajústalo y guárdalo: la próxima vez se carga de un clic.
+            </p>
+          </div>
+        </Section>
       )}
     </div>
   );
 }
 
-function Shortcut({
-  icon,
-  title,
-  description,
-  onClick,
-}: {
-  icon: React.ReactNode;
-  title: string;
-  description: string;
-  onClick: () => void;
-}) {
-  return (
-    <button
-      onClick={onClick}
-      className="group cursor-pointer rounded-xl border border-base-750 bg-base-900 p-3.5 text-left transition-colors duration-200 hover:border-base-700 hover:bg-base-850"
-    >
-      <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-base-800 text-ink-300 transition-colors duration-200 group-hover:bg-accent-600/15 group-hover:text-accent-400">
-        {icon}
-      </span>
-      <p className="mt-2.5 text-xs font-medium text-ink-100">{title}</p>
-      <p className="mt-0.5 text-[0.6875rem] leading-relaxed text-ink-500">{description}</p>
-    </button>
-  );
+function elapsed(seconds: number | null | undefined): string {
+  if (!seconds) return "—";
+  const diff = Math.max(0, Math.floor(Date.now() / 1000) - seconds);
+  if (diff < 60) return `${diff} s`;
+  if (diff < 3600) return `${Math.floor(diff / 60)} min`;
+  return `${Math.floor(diff / 3600)} h`;
+}
+
+/** Une clases sin importar clsx en este fichero. */
+function clsxJoin(...parts: (string | false | undefined)[]): string {
+  return parts.filter(Boolean).join(" ");
 }

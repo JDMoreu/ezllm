@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import clsx from "clsx";
-import { Activity, Cpu, Download, Layers, Zap } from "lucide-react";
+import { Activity, Cpu, Download, Layers, Loader2, Play, Square, Zap } from "lucide-react";
 
 import { api } from "./lib/api";
 import { ToastProvider, useToast } from "./components/ui";
@@ -32,7 +32,6 @@ function Shell() {
   const [selectedDraft, setSelectedDraft] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
-  // --- Carga inicial ------------------------------------------------------
   useEffect(() => {
     let alive = true;
     (async () => {
@@ -59,13 +58,9 @@ function Shell() {
     };
   }, [toast]);
 
-  // --- Refresco periódico del servidor ------------------------------------
   useEffect(() => {
     const id = setInterval(() => {
-      api
-        .serverStatus()
-        .then(setServer)
-        .catch(() => {});
+      api.serverStatus().then(setServer).catch(() => {});
     }, 3000);
     return () => clearInterval(id);
   }, []);
@@ -82,6 +77,18 @@ function Shell() {
     [toast],
   );
 
+  // La carpeta de modelos se persiste con retardo: si no, al reiniciar la
+  // app se pierde el sitio donde el usuario dejó sus modelos. Se escribe
+  // poco despues de que el usuario deja de teclear, no en cada tecla.
+  useEffect(() => {
+    if (!config) return;
+    if (config.modelsDir === modelsDir) return;
+    const id = setTimeout(() => {
+      void saveConfig({ ...config, modelsDir });
+    }, 600);
+    return () => clearTimeout(id);
+  }, [modelsDir, config, saveConfig]);
+
   const refreshHardware = useCallback(async () => {
     try {
       setHardware(await api.hardwareReport());
@@ -93,7 +100,6 @@ function Shell() {
   const handleStart = useCallback(async () => {
     setBusy(true);
     try {
-      // Si hay un despliegue activo, mandan sus modelos y su configuracion.
       let model = selectedModel;
       let mmproj = selectedMmproj;
       let draft = selectedDraft;
@@ -107,9 +113,7 @@ function Shell() {
       const st = await api.startServer(model, mmproj, draft);
       setServer(st);
       toast.push(
-        st.health
-          ? `Servidor en marcha en http://${st.host}:${st.port}`
-          : "El servidor arrancó; todavía no responde.",
+        st.health ? `Servidor en marcha en http://${st.host}:${st.port}` : "El servidor arrancó; todavía no responde.",
         st.health ? "success" : "info",
       );
       refreshHardware();
@@ -140,12 +144,7 @@ function Shell() {
       setSelectedMmproj(mmproj);
       setSelectedDraft(draft);
       if (config) {
-        void saveConfig({
-          ...config,
-          lastModel: model,
-          lastMmproj: mmproj,
-          lastDraftModel: draft,
-        });
+        void saveConfig({ ...config, lastModel: model, lastMmproj: mmproj, lastDraftModel: draft });
       }
     },
     [config, saveConfig],
@@ -166,13 +165,16 @@ function Shell() {
             selectedDraft={selectedDraft}
             onSelect={onModelPicked}
             onConfigChange={saveConfig}
-            onStart={handleStart}
-            onStop={handleStop}
-            busy={busy}
           />
         );
       case "releases":
-        return <ReleasesView config={config} onConfigChange={saveConfig} />;
+        return (
+          <ReleasesView
+            config={config}
+            hardware={hardware}
+            onConfigChange={saveConfig}
+          />
+        );
       case "settings":
         return (
           <SettingsView
@@ -189,122 +191,121 @@ function Shell() {
             server={server}
             selectedModel={selectedModel}
             onNavigate={(v) => setView(v as ViewId)}
-            onStart={handleStart}
-            onStop={handleStop}
-            busy={busy}
           />
         );
     }
-  }, [
-    view,
-    config,
-    saveConfig,
-    modelsDir,
-    selectedModel,
-    selectedMmproj,
-    selectedDraft,
-    onModelPicked,
-    server,
-    handleStart,
-    handleStop,
-    busy,
-    hardware,
-    refreshHardware,
-  ]);
+  }, [view, config, saveConfig, modelsDir, selectedModel, selectedMmproj, selectedDraft, onModelPicked, server, handleStart, handleStop, busy, hardware, refreshHardware]);
 
   return (
     <div className="flex h-full">
-      {/* --- Barra lateral --- */}
-      <nav
-        className="flex w-[13.5rem] shrink-0 flex-col border-r border-base-800 bg-base-950/60"
-        aria-label="Secciones"
-      >
-        <div className="flex items-center gap-2.5 px-4 py-4">
-          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-accent-600/15 text-accent-400">
-            <Zap size={17} />
-          </div>
-          <div className="min-w-0">
-            <p className="truncate text-[0.8125rem] font-semibold tracking-tight text-ink-100">
-              EzLlamaCpp
-            </p>
-            <p className="truncate text-[0.6875rem] text-ink-500">Cliente de llama.cpp</p>
-          </div>
+      {/* ==================================================================
+          Barra lateral: navegación + control del servidor.
+
+          El control del servidor vive AQUÍ y en ningún otro sitio, para que
+          esté disponible desde cualquier sección sin repetir el botón en
+          cada vista.
+          ================================================================== */}
+      <aside className="flex w-[13.5rem] shrink-0 flex-col border-r border-base-800 bg-base-950">
+        {/* Marca */}
+        <div className="flex h-12 shrink-0 items-center gap-2.5 border-b border-base-800 px-4">
+          <span className="flex h-6 w-6 items-center justify-center rounded-md bg-accent-500/15 text-accent-400">
+            <Zap size={13} />
+          </span>
+          <span className="text-[0.8125rem] font-semibold tracking-tight text-ink-100">
+            EzLlamaCpp
+          </span>
         </div>
 
-        <ul className="flex-1 space-y-0.5 px-2.5 py-1">
+        {/* Navegación */}
+        <nav className="flex-1 space-y-0.5 overflow-y-auto p-2" aria-label="Secciones">
           {NAV.map((item) => {
             const Icon = item.icon;
             const active = view === item.id;
             return (
-              <li key={item.id}>
-                <button
-                  onClick={() => setView(item.id)}
-                  title={item.hint}
+              <button
+                key={item.id}
+                onClick={() => setView(item.id)}
+                title={item.hint}
+                className={clsx(
+                  "group flex w-full cursor-pointer items-center gap-2.5 rounded-md px-2.5 py-2 text-left text-xs font-medium transition-colors duration-150",
+                  active
+                    ? "bg-base-850 text-ink-100"
+                    : "text-ink-400 hover:bg-base-900 hover:text-ink-200",
+                )}
+                aria-current={active ? "page" : undefined}
+              >
+                <span
                   className={clsx(
-                    "flex w-full cursor-pointer items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-[0.8125rem] font-medium transition-colors duration-200",
+                    "flex h-5 w-5 shrink-0 items-center justify-center rounded transition-colors duration-150",
                     active
-                      ? "bg-accent-600/14 text-accent-300"
-                      : "text-ink-300 hover:bg-base-850 hover:text-ink-100",
+                      ? "text-accent-400"
+                      : "text-ink-500 group-hover:text-ink-300",
                   )}
-                  aria-current={active ? "page" : undefined}
                 >
-                  <Icon size={15} className="shrink-0" />
-                  {item.label}
-                </button>
-              </li>
+                  <Icon size={14} />
+                </span>
+                {item.label}
+              </button>
             );
           })}
-        </ul>
+        </nav>
 
-        {/* --- Estado del servidor (siempre visible) --- */}
-        <div className="border-t border-base-800 p-3">
-          <div className="rounded-lg bg-base-900 px-3 py-2.5">
-            <div className="flex items-center justify-between gap-2">
-              <span className="text-[0.6875rem] font-semibold tracking-wide text-ink-400 uppercase">
-                Servidor
-              </span>
-              <span
-                className={clsx(
-                  "h-1.5 w-1.5 rounded-full",
-                  server?.running
-                    ? server.health
-                      ? "bg-accent-400"
-                      : "bg-warn-400 animate-pulse"
-                    : "bg-ink-500",
-                )}
-              />
-            </div>
-            <p className="mono mt-1 text-xs text-ink-200">
-              {server?.running ? `http://${server.host}:${server.port}` : "Detenido"}
-            </p>
-            {server?.running && server.models.length > 0 && (
-              <p className="mt-1 truncate text-[0.6875rem] text-ink-400">
-                {server.models.join(", ")}
-              </p>
-            )}
-            <div className="mt-2.5 flex gap-1.5">
-              <button
-                onClick={handleStart}
-                disabled={busy || server?.running}
-                className="btn btn-primary flex-1 px-2 py-1 text-[0.6875rem]"
-              >
-                {server?.running ? "En marcha" : "Arrancar"}
-              </button>
-              <button
-                onClick={handleStop}
-                disabled={busy || !server?.running}
-                className="btn btn-ghost px-2 py-1 text-[0.6875rem]"
-              >
-                Parar
-              </button>
-            </div>
+        {/* --- Control del servidor: único en toda la app --- */}
+        <div className="shrink-0 space-y-2.5 border-t border-base-800 p-3">
+          <div className="flex items-center justify-between gap-2">
+            <span className="text-[0.6875rem] font-medium tracking-wide text-ink-400 uppercase">
+              Servidor
+            </span>
+            <span
+              className={clsx(
+                "pulse-dot",
+                server?.running
+                  ? server.health
+                    ? "pulse-dot-ok"
+                    : "pulse-dot-warn"
+                  : "",
+              )}
+              aria-hidden
+            />
           </div>
+
+          <p className="mono truncate text-[0.6875rem] text-ink-400">
+            {server?.running
+              ? `http://${server.host}:${server.port}`
+              : "Detenido"}
+          </p>
+
+          {server?.running && server.models.length > 0 && (
+            <p className="truncate text-[0.6875rem] text-ink-500" title={server.models.join(", ")}>
+              {server.models.join(", ")}
+            </p>
+          )}
+
+          <button
+            onClick={server?.running ? handleStop : handleStart}
+            disabled={busy}
+            className={clsx(
+              "flex w-full cursor-pointer items-center justify-center gap-2 rounded-md px-3 py-2 text-xs font-semibold transition-colors duration-150",
+              server?.running
+                ? "bg-danger-500/15 text-danger-400 hover:bg-danger-500/25"
+                : "bg-accent-500 text-[#08091c] hover:bg-accent-400",
+            )}
+          >
+            {busy ? (
+              <Loader2 size={13} className="animate-spin" />
+            ) : server?.running ? (
+              <Square size={12} />
+            ) : (
+              <Play size={12} />
+            )}
+            {busy ? "…" : server?.running ? "Detener" : "Arrancar"}
+          </button>
         </div>
-      </nav>
+      </aside>
 
       {/* --- Contenido --- */}
-      <main className="flex-1 overflow-y-auto">
-        <div className="mx-auto max-w-[68rem] px-6 py-6">{content}</div>
+      <main className="min-w-0 flex-1 overflow-y-auto">
+        <div className="mx-auto max-w-[76rem] px-6 py-5">{content}</div>
       </main>
     </div>
   );

@@ -15,6 +15,9 @@ import type {
   ReleaseView,
   ServerStatus,
   StableRelease,
+  Telemetry,
+  SpeedResult,
+  SlotsState,
 } from "../types";
 
 export const api = {
@@ -88,6 +91,11 @@ export const api = {
     invoke<[AppConfig, Deployment]>("apply_deployment", { id }),
   duplicateDeployment: (id: string, newName: string) =>
     invoke<Deployment>("duplicate_deployment", { id, newName }),
+
+  // --- Telemetría ----------------------------------------------------------
+  telemetrySnapshot: () => invoke<Telemetry>("telemetry_snapshot"),
+  telemetrySlots: () => invoke<SlotsState | null>("telemetry_slots"),
+  telemetrySpeed: () => invoke<SpeedResult>("telemetry_speed"),
 
   // --- Utilidades --------------------------------------------------------
   llamaServerPath: () => invoke<string | null>("llama_server_path"),

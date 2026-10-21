@@ -1,0 +1,805 @@
+/* =========================================================================
+   EzLlamaCpp — sistema de diseño v2 (CAMBIO DE PALETA + TIPOGRAFÍA + MOVIMIENTO)
+
+   LISTO PARA PEGAR sobre src/index.css (reemplaza el @theme y @layer components).
+   Todos los contrastes están calculados contra WCAG 2.1 y la separación de
+   tonos contra CIELAB ΔE. Namespaces @theme verificados compilando con
+   tailwindcss@4.3.3 (el del proyecto).
+
+   RESUMEN DE LOS CAMBIOS
+   1. El acento pasa de VERDE a INDIGO. Motivo: con acento verde (hue 158) y
+      ok verde (hue 142) el ΔE entre ambos es 22.5 y su contraste mutuo 1.087
+      — son visualmente el mismo color, así que "la acción en curso" y "el
+      sistema está sano" se confunden. Con acento indigo el ΔE sube a 136.4.
+   2. "violet" pasa a fuchsia (#c026d3) para separarse del indigo (ΔE 50.4).
+   3. Se añaden 6 roles tipográficos con nombre (text-display … text-micro).
+      El código actual usa 64 veces text-[0.6875rem] (11px) y 77 text-xs (12px):
+      demasiado pequeño para una herramienta de escritorio.
+   4. La tipografía pasa a IBM Plex Sans Variable. El detector de impeccable
+      marca Inter como "overused font"; IBM Plex da identidad de herramienta
+      de ingeniería sin coste de legibilidad.
+   5. El medidor usa transform: scaleX() en lugar de width: evita layout.
+   ========================================================================= */
+
+@import "tailwindcss";
+
+/* -------------------------------------------------------------------------
+   Fuentes self-hosted.
+   Motivo: el CSP de Tauri es `font-src 'self' data:` — no permite
+   fonts.googleapis.com. Sin esto la app renderiza en Segoe UI Variable
+   aunque --font-sans declare otra cosa.
+   Los .woff2 están en public/fonts/.
+   ------------------------------------------------------------------------- */
+
+@font-face {
+  font-family: "IBM Plex Sans";
+  font-style: normal;
+  font-display: swap;
+  font-weight: 100 700;
+  src: url("/fonts/ibm-plex-sans-latin-var.woff2") format("woff2-variations");
+}
+@font-face {
+  font-family: "IBM Plex Mono";
+  font-style: normal;
+  font-display: swap;
+  font-weight: 400;
+  src: url("/fonts/ibm-plex-mono-latin-400.woff2") format("woff2");
+}
+@font-face {
+  font-family: "IBM Plex Mono";
+  font-style: normal;
+  font-display: swap;
+  font-weight: 500;
+  src: url("/fonts/ibm-plex-mono-latin-500.woff2") format("woff2");
+}
+
+/* =========================================================================
+   TOKENS
+   ========================================================================= */
+
+@theme {
+  /* --- Superficies: 4 niveles, cada uno con un trabajo y uno solo ----- */
+  --color-base-950: #0b0d11; /* canvas de la app */
+  --color-base-900: #12151b; /* panel / tarjeta */
+  --color-base-850: #181c24; /* elevada: menú, popover, hover de fila */
+  --color-base-800: #1f242e; /* control: input, botón */
+  --color-base-700: #2b3240; /* hairline: borde de tarjeta y de control */
+  --color-base-600: #3b4453; /* borde fuerte: hover/focus de control */
+
+  /* --- Texto: 5 niveles. ink-500 es el único bajo AA (4.53 en base-950),
+         y solo se usa a 12px+ o en elementos decorativos. --------------- */
+  --color-ink-100: #f4f7fa; /* 18.09:1 — títulos, cifras grandes */
+  --color-ink-200: #dde3ec; /* 15.07:1 — cuerpo de texto */
+  --color-ink-300: #bcc5d4; /* 11.18:1 — secundario */
+  --color-ink-400: #8f9bad; /* 6.91:1  — etiquetas, metadatos */
+  --color-ink-500: #6f7b8d; /* 4.53:1  — disabled, hints */
+
+  /* --- Acento: la ACCIÓN DEL USUARIO (hue 232) ------------------------
+     Deliberadamente NO verde: el verde queda libre para "sano".          */
+  --color-accent-300: #a8b4fb; /* 9.22:1 — texto de acento */
+  --color-accent-400: #8a97f7; /* 6.83:1 — hover + anillo de foco */
+  --color-accent-500: #6b7cf3; /* 5.05:1 — borde de focus / selección */
+  --color-accent-600: #5468e6; /* relleno del botón primario */
+  --color-accent-700: #3f4cb8; /* press */
+
+  /* --- Semánticos: el estado del sistema ------------------------------
+     ok=verde 142, warn=ámbar 38, danger=rojo 0, info=cian 198.
+     Todos con ΔE >= 57 entre sí: nunca se confunden.                   */
+  --color-ok-400: #4ade80;
+  --color-ok-500: #22c55e;
+  --color-ok-600: #16a34a;
+  --color-warn-400: #fbbf24;
+  --color-warn-500: #f59e0b;
+  --color-warn-600: #d97706;
+  --color-danger-400: #f87171;
+  --color-danger-500: #ef4444;
+  --color-danger-600: #dc2626;
+  --color-info-400: #7dd3fc;
+  --color-info-500: #38bdf8;
+  --color-info-600: #0ea5e9;
+
+  /* --- Experimental: SOLO MTP / draft / flags inestables ---------------
+     Fuchsia, no violeta: el violeta queda a ΔE 22.8 del indigo, que es
+     demasiado poco. Fuchsia abre a ΔE 50.4.                            */
+  --color-violet-400: #e879f9;
+  --color-violet-500: #c026d3;
+
+  /* --- Tipografía ------------------------------------------------------
+     IBM Plex Sans Variable (100-700) + IBM Plex Mono (400/500).
+     Una familia para UI. Escala fija en rem: el usuario ve la app a DPI
+     constante, así que no se fluidifica.                               */
+  --font-sans: "IBM Plex Sans", "Segoe UI Variable", "Segoe UI", system-ui, sans-serif;
+  --font-mono: "IBM Plex Mono", "Cascadia Code", "Consolas", ui-monospace, monospace;
+
+  --text-display: 1.5rem; /* 24px — título de vista */
+  --text-display--line-height: 1.2;
+  --text-display--letter-spacing: -0.02em;
+  --text-display--font-weight: 600;
+
+  --text-title: 1.0625rem; /* 17px — título de tarjeta/sección */
+  --text-title--line-height: 1.3;
+  --text-title--letter-spacing: -0.01em;
+  --text-title--font-weight: 600;
+
+  --text-body: 0.84375rem; /* 13.5px — cuerpo, celdas, descripciones */
+  --text-body--line-height: 1.55;
+
+  --text-label: 0.75rem; /* 12px — etiquetas, botones, tabs */
+  --text-label--line-height: 1.4;
+  --text-label--font-weight: 500;
+
+  --text-meta: 0.6875rem; /* 11px — metadatos y unidades */
+  --text-meta--line-height: 1.35;
+  --text-meta--letter-spacing: 0.005em;
+
+  --text-micro: 0.625rem; /* 10px — solo overline en MAYÚSCULAS */
+  --text-micro--line-height: 1.3;
+  --text-micro--letter-spacing: 0.06em;
+  --text-micro--font-weight: 500;
+
+  --leading-tight: 1.25;
+  --tracking-wide: 0.02em;
+
+  /* --- Radios: 3, como Linear ------------------------------------------ */
+  --radius-control: 6px;
+  --radius-card: 12px;
+  --radius-panel: 14px;
+
+  /* --- Sombras: solo para lo que flota, nunca para separar ------------- */
+  --shadow-panel: 0 1px 2px rgb(0 0 0 / 0.35), 0 6px 20px -10px rgb(0 0 0 / 0.55);
+  --shadow-float: 0 16px 44px -12px rgb(0 0 0 / 0.7);
+  --shadow-overlay: 0 24px 64px -16px rgb(0 0 0 / 0.8);
+  --shadow-inset: inset 0 1px 0 0 rgb(255 255 255 / 0.04);
+
+  /* --- Curvas ---------------------------------------------------------- */
+  --ease-instrument: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-exit: cubic-bezier(0.4, 0, 1, 1);
+  --ease-snap: cubic-bezier(0.16, 1, 0.3, 1);
+
+  /* --- Breakpoints extra (3xl/4xl no existen por defecto en v4) -------- */
+  --breakpoint-3xl: 90rem; /* 1440px */
+  --breakpoint-4xl: 100rem; /* 1600px */
+
+  /* --- Espaciado: base 4px, un único múltiplo libre ------------------- */
+  --spacing-gutter: 20px;
+}
+
+/* =========================================================================
+   BASE
+   ========================================================================= */
+
+* {
+  border-color: var(--color-base-700);
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--color-base-950);
+  color: var(--color-ink-200);
+  font-family: var(--font-sans);
+  font-size: 13.5px;
+  line-height: 1.55;
+  font-feature-settings: "cv11", "tnum";
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+  overflow: hidden;
+}
+
+/* La luz de fondo apenas se percibe: da profundidad sin robar atención. */
+#root {
+  background:
+    radial-gradient(1200px 640px at 12% -14%, rgb(107 124 243 / 0.05), transparent 60%),
+    var(--color-base-950);
+}
+
+:focus-visible {
+  outline: 2px solid var(--color-accent-400);
+  outline-offset: 2px;
+  border-radius: var(--radius-control);
+}
+
+::selection {
+  background: color-mix(in oklab, var(--color-accent-500) 32%, transparent);
+  color: var(--color-ink-100);
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--color-base-700);
+  border-radius: 999px;
+  border: 3px solid transparent;
+  background-clip: content-box;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--color-base-600);
+  background-clip: content-box;
+}
+
+/* =========================================================================
+   COMPONENTES
+   ========================================================================= */
+
+@layer components {
+  /* --- Superficies -----------------------------------------------------
+     Regla: una tarjeta es siempre bg-base-900 + border-base-700.          */
+  .card {
+    background: var(--color-base-900);
+    border: 1px solid var(--color-base-700);
+    border-radius: var(--radius-card);
+    box-shadow: var(--shadow-panel);
+  }
+
+  .panel {
+    background: var(--color-base-900);
+    border: 1px solid var(--color-base-700);
+    border-radius: var(--radius-panel);
+  }
+
+  /* Una sección de un dominio. El borde de acento marca "esto es lo que se
+     está configurando ahora". */
+  .section {
+    background: var(--color-base-900);
+    border: 1px solid var(--color-base-700);
+    border-radius: var(--radius-card);
+    box-shadow: var(--shadow-panel);
+  }
+  .section-active {
+    border-color: color-mix(in oklab, var(--color-accent-500) 45%, var(--color-base-700));
+    box-shadow:
+      var(--shadow-panel),
+      0 0 0 1px color-mix(in oklab, var(--color-accent-500) 20%, transparent);
+  }
+
+  /* Fila dentro de una lista densa: sin caja, solo separadores. */
+  .row {
+    border-bottom: 1px solid var(--color-base-700);
+  }
+  .row:last-child {
+    border-bottom: 0;
+  }
+
+  /* --- Botones ----------------------------------------------------------
+     Estados: default / hover / active / focus / disabled / loading.       */
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.4rem;
+    padding: 0.4rem 0.7rem;
+    border-radius: var(--radius-control);
+    font-size: 0.75rem;
+    font-weight: 500;
+    line-height: 1.4;
+    white-space: nowrap;
+    cursor: pointer;
+    border: 1px solid transparent;
+    transition:
+      background-color 140ms var(--ease-instrument),
+      border-color 140ms var(--ease-instrument),
+      color 140ms var(--ease-instrument),
+      box-shadow 140ms var(--ease-instrument),
+      transform 90ms var(--ease-snap);
+    user-select: none;
+  }
+  .btn:active:not(:disabled) {
+    transform: translateY(0.5px);
+  }
+  .btn:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+    box-shadow: none;
+  }
+
+  .btn-primary {
+    background: var(--color-accent-600);
+    color: #ffffff;
+    font-weight: 500;
+  }
+  .btn-primary:hover:not(:disabled) {
+    background: var(--color-accent-500);
+  }
+  .btn-primary:active:not(:disabled) {
+    background: var(--color-accent-700);
+  }
+
+  .btn-ghost {
+    background: var(--color-base-800);
+    color: var(--color-ink-200);
+    border-color: var(--color-base-700);
+  }
+  .btn-ghost:hover:not(:disabled) {
+    background: var(--color-base-850);
+    border-color: var(--color-base-600);
+  }
+
+  .btn-danger {
+    background: color-mix(in oklab, var(--color-danger-500) 14%, transparent);
+    color: var(--color-danger-400);
+    border-color: color-mix(in oklab, var(--color-danger-500) 38%, transparent);
+  }
+  .btn-danger:hover:not(:disabled) {
+    background: color-mix(in oklab, var(--color-danger-500) 24%, transparent);
+  }
+  .btn-danger:active:not(:disabled) {
+    background: color-mix(in oklab, var(--color-danger-500) 30%, transparent);
+  }
+
+  .btn-quiet {
+    background: transparent;
+    color: var(--color-ink-300);
+  }
+  .btn-quiet:hover:not(:disabled) {
+    background: var(--color-base-800);
+    color: var(--color-ink-100);
+  }
+
+  /* --- Campos ----------------------------------------------------------- */
+  .field {
+    width: 100%;
+    background: var(--color-base-800);
+    border: 1px solid var(--color-base-700);
+    border-radius: var(--radius-control);
+    padding: 0.375rem 0.625rem;
+    color: var(--color-ink-100);
+    font-size: 0.75rem;
+    font-family: inherit;
+    transition:
+      border-color 140ms var(--ease-instrument),
+      box-shadow 140ms var(--ease-instrument),
+      background-color 140ms var(--ease-instrument);
+  }
+  .field:hover:not(:disabled) {
+    border-color: var(--color-base-600);
+  }
+  .field:focus {
+    outline: none;
+    border-color: var(--color-accent-500);
+    box-shadow: 0 0 0 3px rgb(107 124 243 / 0.2);
+  }
+  .field:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+  .field::placeholder {
+    color: var(--color-ink-500);
+  }
+  select.field {
+    appearance: none;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%238f9bad' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 0.6rem center;
+    padding-right: 1.75rem;
+    cursor: pointer;
+  }
+  input[type="number"].field::-webkit-outer-spin-button,
+  input[type="number"].field::-webkit-inner-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+  }
+  input[type="number"].field {
+    -moz-appearance: textfield;
+  }
+
+  /* Etiqueta de campo: 12px, peso 500, sin mayúsculas.
+     La versión anterior (11px, uppercase, weight 600) leía como etiqueta de
+     marketing, no como etiqueta de control de escritorio. */
+  .label {
+    display: block;
+    font-size: 0.75rem;
+    font-weight: 500;
+    line-height: 1.4;
+    color: var(--color-ink-300);
+    margin-bottom: 0.3rem;
+  }
+
+  /* Overline: el único sitio donde 10px + mayúsculas es correcto. */
+  .overline {
+    display: block;
+    font-size: 0.625rem;
+    font-weight: 500;
+    line-height: 1.3;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--color-ink-400);
+  }
+
+  /* --- Etiquetas de estado ---------------------------------------------
+     Un chip es un estado del sistema, no un adorno.                     */
+  .chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    padding: 0.1rem 0.45rem;
+    border-radius: 999px;
+    font-size: 0.6875rem;
+    font-weight: 500;
+    line-height: 1.4;
+    border: 1px solid var(--color-base-700);
+    background: var(--color-base-800);
+    color: var(--color-ink-300);
+    white-space: nowrap;
+  }
+  .chip-accent {
+    border-color: color-mix(in oklab, var(--color-accent-500) 42%, transparent);
+    background: color-mix(in oklab, var(--color-accent-500) 14%, transparent);
+    color: var(--color-accent-300);
+  }
+  .chip-ok {
+    border-color: color-mix(in oklab, var(--color-ok-500) 42%, transparent);
+    background: color-mix(in oklab, var(--color-ok-500) 14%, transparent);
+    color: var(--color-ok-400);
+  }
+  .chip-warn {
+    border-color: color-mix(in oklab, var(--color-warn-500) 42%, transparent);
+    background: color-mix(in oklab, var(--color-warn-500) 14%, transparent);
+    color: var(--color-warn-400);
+  }
+  .chip-danger {
+    border-color: color-mix(in oklab, var(--color-danger-500) 42%, transparent);
+    background: color-mix(in oklab, var(--color-danger-500) 14%, transparent);
+    color: var(--color-danger-400);
+  }
+  .chip-info {
+    border-color: color-mix(in oklab, var(--color-info-500) 42%, transparent);
+    background: color-mix(in oklab, var(--color-info-500) 14%, transparent);
+    color: var(--color-info-400);
+  }
+  .chip-violet {
+    border-color: color-mix(in oklab, var(--color-violet-500) 42%, transparent);
+    background: color-mix(in oklab, var(--color-violet-500) 14%, transparent);
+    color: var(--color-violet-400);
+  }
+
+  .mono {
+    font-family: var(--font-mono);
+    font-variant-ligatures: none;
+    font-feature-settings: "tnum";
+  }
+
+  /* --- Medidores --------------------------------------------------------
+     transform: scaleX() NO dispara layout; width sí. Con 30 medidores esa
+     es la diferencia entre "vivo" y "pesado". El relleno usa el color
+     SEMÁNTICO (ok/warn/danger), no el acento: un medidor de VRAM al 92%
+     debe verse ámbar, no indigo.                                      */
+  .meter {
+    position: relative;
+    height: 6px;
+    border-radius: 999px;
+    background: var(--color-base-800);
+    overflow: hidden;
+    box-shadow: inset 0 0 0 1px rgb(255 255 255 / 0.03);
+  }
+  .meter > span {
+    display: block;
+    height: 100%;
+    width: 100%;
+    border-radius: 999px;
+    transform-origin: left center;
+    transform: scaleX(0);
+    background: var(--color-ok-500);
+    transition:
+      transform 320ms var(--ease-instrument),
+      background-color 320ms var(--ease-instrument);
+  }
+  .meter-warn > span {
+    background: var(--color-warn-500);
+  }
+  .meter-danger > span {
+    background: var(--color-danger-500);
+  }
+  .meter-muted > span {
+    background: var(--color-base-700);
+  }
+
+  /* --- Sparkline -------------------------------------------------------- */
+  .spark {
+    display: block;
+    width: 100%;
+    height: 100%;
+    overflow: visible;
+  }
+  .spark-line {
+    fill: none;
+    stroke: var(--color-accent-400);
+    stroke-width: 1.5;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+    vector-effect: non-scaling-stroke;
+  }
+  .spark-area {
+    fill: color-mix(in oklab, var(--color-accent-500) 16%, transparent);
+    stroke: none;
+  }
+  .spark-ok .spark-line {
+    stroke: var(--color-ok-400);
+  }
+  .spark-ok .spark-area {
+    fill: color-mix(in oklab, var(--color-ok-500) 16%, transparent);
+  }
+  .spark-warn .spark-line {
+    stroke: var(--color-warn-400);
+  }
+  .spark-warn .spark-area {
+    fill: color-mix(in oklab, var(--color-warn-500) 16%, transparent);
+  }
+  .spark-danger .spark-line {
+    stroke: var(--color-danger-400);
+  }
+  .spark-danger .spark-area {
+    fill: color-mix(in oklab, var(--color-danger-500) 16%, transparent);
+  }
+
+  /* --- Punto de estado con pulso ---------------------------------------
+     Tres estados, tres tratamientos. El halo es UN pseudo-elemento con
+     transform/opacity: nunca filter (filter es caro).                  */
+  .pulse-dot {
+    position: relative;
+    display: inline-block;
+    height: 7px;
+    width: 7px;
+    flex: none;
+    border-radius: 999px;
+    background: var(--color-ink-500);
+  }
+  .pulse-dot::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    border-radius: 999px;
+    background: inherit;
+    animation: ez-ping 1.9s var(--ease-instrument) infinite;
+  }
+  .pulse-dot-ok {
+    background: var(--color-ok-500);
+  }
+  .pulse-dot-warn {
+    background: var(--color-warn-500);
+  }
+  .pulse-dot-danger {
+    background: var(--color-danger-500);
+  }
+  /* Estado sano: respira en lugar de latir. Un latido constante en una UI
+     de escritorio es ruido; el pulso reservarlo al estado transitorio. */
+  .pulse-dot-live::after {
+    animation: ez-breathe 3.4s ease-in-out infinite;
+  }
+  .pulse-dot-idle::after {
+    animation: none;
+    opacity: 0;
+  }
+
+  /* --- Esqueleto de carga ----------------------------------------------- */
+  .skeleton {
+    background: linear-gradient(
+      90deg,
+      var(--color-base-850) 25%,
+      var(--color-base-800) 37%,
+      var(--color-base-850) 63%
+    );
+    background-size: 400% 100%;
+    animation: ez-shimmer 1.4s ease-in-out infinite;
+    border-radius: var(--radius-control);
+  }
+
+  /* --- Riel de acento para marcar la sección activa ------------------- */
+  .rail {
+    border-left: 2px solid var(--color-accent-500);
+  }
+}
+
+/* =========================================================================
+   MOVIMIENTO
+   ========================================================================= */
+
+/* --- Keyframes ----------------------------------------------------------- */
+
+@keyframes ez-fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes ez-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+/* Entrada de fila de lista: el contenido aparece, no "flota". */
+@keyframes ez-rise {
+  from {
+    opacity: 0;
+    transform: translateY(4px) scale(0.995);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes ez-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.4;
+  }
+}
+
+/* Halo del punto de estado (servidor arrancando). */
+@keyframes ez-ping {
+  0% {
+    transform: scale(1);
+    opacity: 0.7;
+  }
+  75%,
+  100% {
+    transform: scale(2.6);
+    opacity: 0;
+  }
+}
+
+/* Respiración lenta del estado sano. */
+@keyframes ez-breathe {
+  0%,
+  100% {
+    opacity: 0.24;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.5;
+    transform: scale(1.3);
+  }
+}
+
+@keyframes ez-shimmer {
+  0% {
+    background-position: 100% 50%;
+  }
+  100% {
+    background-position: 0 50%;
+  }
+}
+
+@keyframes ez-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* Toast: sube con desenfoque acotado. */
+@keyframes ez-toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.98);
+    filter: blur(4px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+    filter: blur(0);
+  }
+}
+
+@keyframes ez-toast-out {
+  from {
+    opacity: 1;
+    transform: none;
+  }
+  to {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+}
+
+/* --- Utilidades ---------------------------------------------------------- */
+
+.animate-fade-up {
+  animation: ez-fade-up 260ms var(--ease-instrument) both;
+}
+.animate-fade-in {
+  animation: ez-fade-in 240ms var(--ease-instrument) both;
+}
+.animate-rise {
+  animation: ez-rise 260ms var(--ease-instrument) both;
+}
+.animate-pulse {
+  animation: ez-pulse 1.9s ease-in-out infinite;
+}
+.animate-skeleton {
+  animation: ez-shimmer 1.4s ease-in-out infinite;
+}
+.animate-spin {
+  animation: ez-spin 700ms linear infinite;
+}
+.animate-toast-in {
+  animation: ez-toast-in 320ms var(--ease-instrument) both;
+}
+
+/* Stagger: SOLO para siblings de una lista. Tope de 150ms. */
+.stagger > * {
+  animation: ez-rise 280ms var(--ease-instrument) both;
+}
+.stagger > *:nth-child(1) {
+  animation-delay: 0ms;
+}
+.stagger > *:nth-child(2) {
+  animation-delay: 30ms;
+}
+.stagger > *:nth-child(3) {
+  animation-delay: 60ms;
+}
+.stagger > *:nth-child(4) {
+  animation-delay: 90ms;
+}
+.stagger > *:nth-child(5) {
+  animation-delay: 120ms;
+}
+.stagger > *:nth-child(n + 6) {
+  animation-delay: 150ms;
+}
+
+/* =========================================================================
+   REDUCED MOTION
+   No se desactiva el movimiento: se degrada. La información (el estado por
+   color) sobrevive; el desplazamiento espacial, no.
+   ========================================================================= */
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+
+  /* El halo se vuelve un anillo fijo: el color del estado sigue visible. */
+  .pulse-dot::after {
+    animation: none !important;
+    opacity: 0.3 !important;
+    transform: none !important;
+    inset: -2px !important;
+  }
+
+  /* El medidor sigue cambiando de tamaño; solo pierde el ease-out largo. */
+  .meter > span {
+    transition-duration: 120ms !important;
+  }
+
+  /* El skeleton deja de barrerse: un bloque plano sigue diciendo "cargando". */
+  .skeleton {
+    animation: none !important;
+    background: var(--color-base-800) !important;
+  }
+
+  /* Entradas: solo opacidad, sin desplazamiento. */
+  .animate-fade-up,
+  .animate-rise,
+  .stagger > * {
+    animation-name: ez-fade-in !important;
+    transform: none !important;
+  }
+}

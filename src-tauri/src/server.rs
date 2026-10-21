@@ -345,3 +345,18 @@ fn civil_from_days(z: i64) -> (i64, u32, u32) {
     let m = if mp < 10 { mp + 3 } else { mp - 9 } as u32;
     (if m <= 2 { y + 1 } else { y }, m, d)
 }
+
+/// PID del proceso del servidor en marcha, si lo hay.
+pub fn current_pid() -> Option<u32> {
+    let guard = SERVER.lock().unwrap();
+    guard.as_ref().and_then(|r| r.child.id().into())
+}
+
+/// Host y puerto del servidor en marcha. Vacío si no hay ninguno.
+pub fn current_endpoint() -> (String, u16) {
+    let guard = SERVER.lock().unwrap();
+    match guard.as_ref() {
+        Some(r) => (r.host.clone(), r.port),
+        None => (String::new(), 0),
+    }
+}
