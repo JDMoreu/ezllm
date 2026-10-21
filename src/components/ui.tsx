@@ -78,7 +78,7 @@ export function Card({
         <header className="flex items-start justify-between gap-4 border-b border-base-750 px-4 py-3">
           <div className="min-w-0">
             {title && (
-              <h2 className="truncate text-[0.8125rem] font-semibold tracking-tight text-ink-100">
+              <h2 className="truncate text-title font-semibold tracking-tight text-ink-100">
                 {title}
               </h2>
             )}
@@ -117,7 +117,7 @@ export function Field({
         {label}
       </label>
       {children}
-      {hint && <p className="mt-1.5 text-[0.75rem] leading-relaxed text-ink-500">{hint}</p>}
+      {hint && <p className="mt-1.5 text-label leading-relaxed text-ink-500">{hint}</p>}
     </div>
   );
 }
@@ -160,7 +160,7 @@ export function NumberField({
           }}
         />
         {suffix && (
-          <span className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-[0.75rem] font-medium text-ink-500">
+          <span className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-label font-medium text-ink-500">
             {suffix}
           </span>
         )}
@@ -287,7 +287,7 @@ export function Meter({
         aria-valuemax={100}
         aria-label={typeof label === "string" ? label : undefined}
       >
-        <span style={{ width: `${ratio * 100}%` }} />
+        <span style={{ "--fill": ratio } as React.CSSProperties} />
       </div>
     </div>
   );
@@ -584,7 +584,7 @@ export function Section({
         <header className="flex items-start justify-between gap-4 border-b border-base-800 px-4 py-3">
           <div className="min-w-0">
             {title && (
-              <h2 className="flex items-center gap-2 text-[0.8125rem] font-semibold tracking-tight text-ink-100">
+              <h2 className="flex items-center gap-2 text-title font-semibold tracking-tight text-ink-100">
                 {active && <span className="rail -ml-4 pl-2" aria-hidden />}
                 {title}
               </h2>

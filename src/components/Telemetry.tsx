@@ -113,7 +113,7 @@ export function LiveMeter({
         aria-valuemax={100}
         aria-label={typeof label === "string" ? label : undefined}
       >
-        <span style={{ width: `${ratio * 100}%` }} />
+        <span style={{ "--fill": ratio } as React.CSSProperties} />
       </div>
     </div>
   );
@@ -135,7 +135,7 @@ export function Readout({
 }) {
   return (
     <div className="min-w-0">
-      <p className="text-[0.6875rem] font-medium tracking-[0.08em] text-ink-400 uppercase">
+      <p className="text-meta font-medium tracking-[0.08em] text-ink-400 uppercase">
         {label}
       </p>
       <p
@@ -152,7 +152,7 @@ export function Readout({
           <span className="ml-1 text-sm font-medium text-ink-400">{unit}</span>
         )}
       </p>
-      {hint && <p className="mt-1.5 text-[0.75rem] text-ink-400">{hint}</p>}
+      {hint && <p className="mt-1.5 text-label text-ink-400">{hint}</p>}
     </div>
   );
 }

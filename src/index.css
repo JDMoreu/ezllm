@@ -1,5 +1,39 @@
 @import "tailwindcss";
 
+/* -------------------------------------------------------------------------
+   Tipografías self-hosted
+
+   IBM Plex Sans + Plex Mono se embeben: la app no depende de la red para
+   verse bien, y no hay un salto de fuente al arrancar. Plex Mono es la
+   tipografía que ya usa el ecosistema de ingeniería (Kubernetes, IBM), y su
+   "0" slashed evita confundirlo con la "O" de un nombre de modelo.
+   ------------------------------------------------------------------------- */
+
+@font-face {
+  font-family: "Plex Sans";
+  src: url("/fonts/ibm-plex-sans-latin-var.woff2") format("woff2-variations");
+  font-weight: 100 700;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Plex Mono";
+  src: url("/fonts/ibm-plex-mono-latin-400.woff2") format("woff2");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Plex Mono";
+  src: url("/fonts/ibm-plex-mono-latin-500.woff2") format("woff2");
+  font-weight: 500;
+  font-style: normal;
+  font-display: swap;
+}
+
+
 /* =========================================================================
    EzLlamaCpp — sistema de diseño
 
@@ -56,8 +90,22 @@
   --color-violet-500: #b45cf6;
 
   /* --- Tipografía --------------------------------------------------- */
-  --font-sans: "Inter", "Segoe UI Variable", "Segoe UI", system-ui, sans-serif;
-  --font-mono: "JetBrains Mono", "Cascadia Code", "Consolas", ui-monospace, monospace;
+  --font-sans: "Plex Sans", "Segoe UI Variable", "Segoe UI", system-ui, sans-serif;
+  --font-mono: "Plex Mono", "Cascadia Code", "Consolas", ui-monospace, monospace;
+
+  /* --- Escala tipografica -------------------------------------------
+     Roles con nombre, no numeros sueltos: 13.5px de cuerpo es el piso de
+     una app de escritorio densa. El minimo de 11px queda solo para
+     eyebrows en mayusculas. */
+  --text-display: 1.5rem; /* 24px  titulo de vista */
+  --text-title: 1.0625rem; /* 17px  titulo de seccion */
+  --text-body: 0.84375rem; /* 13.5px cuerpo */
+  --text-label: 0.75rem; /* 12px  etiqueta de campo, boton */
+  --text-meta: 0.6875rem; /* 11px  metadatos, unidades */
+  --text-micro: 0.625rem; /* 10px  solo eyebrow en mayusculas */
+
+  --tracking-tight: -0.01em;
+  --tracking-wide: 0.06em;
 
   /* --- Radios ------------------------------------------------------- */
   --radius-card: 10px;
@@ -77,10 +125,6 @@
 /* -------------------------------------------------------------------------
    Base
    ------------------------------------------------------------------------- */
-
-* {
-  border-color: var(--color-base-700);
-}
 
 html,
 body,
@@ -146,6 +190,19 @@ body {
 /* -------------------------------------------------------------------------
    Componentes
    ------------------------------------------------------------------------- */
+
+@layer base {
+  /* El borde por defecto va en la capa `base`, no fuera de capa: una regla
+     sin capa gana a TODAS las capas de Tailwind, incluidas las utilities.
+     Eso hacia que los 53 `border-color` de color de la app fueran codigo
+     muerto: la app se veia plana porque los estados seleccionados, los
+     avisos de error y los acentos no existian. */
+  *,
+  ::before,
+  ::after {
+    border-color: var(--color-base-700);
+  }
+}
 
 @layer components {
   /* --- Superficies --------------------------------------------------- */
@@ -375,12 +432,17 @@ body {
     background: var(--color-base-800);
     overflow: hidden;
   }
+  /* El relleno se escala con `transform`, no con `width`: cambiar el ancho
+     recalcula la geometria de toda la pagina 60 veces por segundo. */
   .meter > span {
     display: block;
     height: 100%;
+    width: 100%;
     border-radius: 999px;
     background: linear-gradient(90deg, var(--color-accent-600), var(--color-accent-400));
-    transition: width 400ms var(--ease-out-soft);
+    transform-origin: left center;
+    transform: scaleX(var(--fill, 0));
+    transition: transform 400ms var(--ease-out-soft);
   }
   .meter-danger > span {
     background: linear-gradient(90deg, var(--color-danger-500), var(--color-danger-400));
@@ -555,5 +617,53 @@ body {
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
+  }
+}
+
+/* -------------------------------------------------------------------------
+   Responsive de escritorio
+
+   La app esta pensada para 1280-1600px, pero tiene que seguir siendo usable
+   en una ventana de 900px (la mitad de una pantalla en paralelo) y no
+   estirarse de mas en 1920px.
+   ------------------------------------------------------------------------- */
+
+/* Por debajo de 1024px la barra lateral se estrecha a iconos. */
+@media (max-width: 1024px) {
+  .app-sidebar {
+    width: 3.5rem;
+  }
+  .app-sidebar-label,
+  .app-sidebar-section {
+    display: none;
+  }
+  .app-sidebar-btn {
+    justify-content: center;
+    padding-left: 0;
+    padding-right: 0;
+  }
+}
+
+/* El contenido no crece sin limite: a partir de 1600px sobra espacio, y
+   las lineas de 140ch son ilegibles. */
+@media (min-width: 1600px) {
+  .app-content {
+    max-width: 82rem;
+  }
+}
+
+/* Por debajo de 900px las columnas laterales se apilan. */
+@media (max-width: 900px) {
+  .app-content {
+    padding-left: 1rem;
+    padding-right: 1rem;
+  }
+}
+
+/* Pantallas de alta densidad: los bordes de 1px se ven igual, pero los
+   iconos de 13px quedan pequenos. Se agrupan un punto. */
+@media (min-resolution: 2dppx) {
+  body {
+    -webkit-font-smoothing: subpixel-antialiased;
   }
 }

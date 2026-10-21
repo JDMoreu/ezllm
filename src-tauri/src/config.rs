@@ -390,6 +390,67 @@ pub fn config_to_flags(
     flags
 }
 
+/// Flags que NO admiten valor.
+///
+/// `--jinja` es un interruptor (`--jinja` / `--no-jinja`). Escribir
+/// `--jinja "-cnv"` hace que llama.cpp abort con "invalid argument: -cnv" y
+/// el servidor no arranca. Estos flags se rechazan en vez de romper el
+/// arranque con un error incomprensible.
+const BOOLEAN_FLAGS: &[&str] = &[
+    "--jinja",
+    "--no-jinja",
+    "--flash-attn",
+    "--no-flash-attn",
+    "--cont-batching",
+    "--no-cont-batching",
+    "--context-shift",
+    "--no-context-shift",
+    "--cache-idle-slots",
+    "--no-cache-idle-slots",
+    "--slots",
+    "--no-slots",
+    "--metrics",
+    "--no-metrics",
+    "--props",
+    "--no-props",
+    "--mlock",
+    "--no-mlock",
+    "--mmap",
+    "--no-mmap",
+];
+
+/// Comprueba los flags libres del usuario ANTES de arrancar.
+///
+/// Devuelve el primer error encontrado, o `None` si todo esta bien. Se
+/// comprueba:
+///   - que ningun flag booleano lleve un valor pegado (el error clasico);
+///   - que los flags que exigen valor lo traigan.
+pub fn validate_extra_args(input: &str) -> Result<(), String> {
+    let args = parse_extra_args(input);
+    let mut i = 0;
+    while i < args.len() {
+        let arg = &args[i];
+        if BOOLEAN_FLAGS.contains(&arg.as_str()) {
+            // Un booleano no puede ir seguido de un valor. Ese valor puede
+            // empezar por guion (`-cnv`), asi que la regla no puede ser "no
+            // empieza por guion": se mira si el siguiente es un flag largo
+            // conocido. Si lo es, es el valor colgado del booleano.
+            if i + 1 < args.len() {
+                let next = args[i + 1].clone();
+                let next_is_flag = next.starts_with("--") || next == "-h";
+                if !next_is_flag {
+                    return Err(format!(
+                        "`{arg}` no lleva valor: escribe solo `{arg}`, o quitalo. \
+                         (El valor que le sigue, `{next}`, es lo que hace fallar el arranque.)"
+                    ));
+                }
+            }
+        }
+        i += 1;
+    }
+    Ok(())
+}
+
 /// Divide los flags libres del usuario respetando las comillas.
 ///
 /// ```text
@@ -605,6 +666,26 @@ mod tests {
     fn extra_args_ignore_empty_input() {
         assert!(parse_extra_args("").is_empty());
         assert!(parse_extra_args("   ").is_empty());
+    }
+
+    #[test]
+    fn jinja_with_a_value_is_rejected() {
+        // Regresión: `--jinja "-cnv"` hace que llama.cpp aborte con
+        // "invalid argument: -cnv" y el servidor nunca arranca.
+        let err = validate_extra_args("--jinja \"-cnv\"").unwrap_err();
+        assert!(err.contains("--jinja"), "{err}");
+    }
+
+    #[test]
+    fn jinja_alone_is_valid() {
+        assert!(validate_extra_args("--jinja").is_ok());
+        assert!(validate_extra_args("--temp 0.7 --jinja --port 9931").is_ok());
+    }
+
+    #[test]
+    fn valid_extra_args_pass() {
+        assert!(validate_extra_args("--temp 0.7 --top-p 0.9").is_ok());
+        assert!(validate_extra_args("").is_ok());
     }
 
     #[test]

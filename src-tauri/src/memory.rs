@@ -185,8 +185,18 @@ pub struct KvCache {
 /// Se reparte en dos bloques, como hace llama.cpp:
 ///   - capas densas: contexto completo
 ///   - capas SWA:     contexto limitado a min(ctx, n_swa)
-pub fn kv_cache_bytes(model: &ModelDims, ctx: u64, n_parallel: u64, cache_type: &str) -> KvCache {
-    let bpe = cache_bytes(cache_type);
+pub fn kv_cache_bytes(
+    model: &ModelDims,
+    ctx: u64,
+    n_parallel: u64,
+    cache_type_k: &str,
+    cache_type_v: &str,
+) -> KvCache {
+    // K y V se cuantizan por separado: la app deja elegirlos por
+    // independiente, y la estimacion debe reflejarlo.
+    let bpe_k = cache_bytes(cache_type_k);
+    let bpe_v = cache_bytes(cache_type_v);
+    let bpe = (bpe_k + bpe_v) / 2.0;
     let ctx_padded = pad(ctx, 256);
     // llama.cpp reparte el contexto entre las ranuras
     let ctx_per_slot = pad(ctx_padded / n_parallel.max(1), 256);
@@ -209,7 +219,7 @@ pub fn kv_cache_bytes(model: &ModelDims, ctx: u64, n_parallel: u64, cache_type: 
         if !l.has_kv {
             continue; // capa sin KV cache propia
         }
-        let per_token = (l.n_embd_k_gqa + l.n_embd_v_gqa) as f64 * bpe;
+        let per_token = l.n_embd_k_gqa as f64 * bpe_k + l.n_embd_v_gqa as f64 * bpe_v;
         if l.is_swa && swa_cells > 0 {
             // La SWA reserva swa_cells POR RANURA.
             swa_bytes += per_token * swa_cells as f64 * n_slots as f64;
@@ -379,11 +389,14 @@ pub fn estimate(
     model: &ModelDims,
     ctx: u64,
     n_parallel: u64,
-    cache_type: &str,
+    cache_type_k: &str,
+    cache_type_v: &str,
     ubatch: u64,
     n_gpu_layers: Option<i64>,
 ) -> MemoryEstimate {
-    let kv = kv_cache_bytes(model, ctx, n_parallel, cache_type);
+    // K y V pueden tener cuantizaciones distintas: la estimacion debe usar
+    // las dos, o el numero mostrado no corresponde a lo que se reservara.
+    let kv = kv_cache_bytes(model, ctx, n_parallel, cache_type_k, cache_type_v);
     let cb = compute_buffer_bytes(ctx, ubatch);
     let weights = model_weights_gb(model);
     let split = weights_split(model, n_gpu_layers);
@@ -456,7 +469,7 @@ mod tests {
         let m = gemma4_dims();
         // MEDIDO en RX 9070 con llama.cpp b11574.
         for (ctx, real) in [(2048u64, 72.0f64), (8192, 168.0), (32768, 552.0)] {
-            let kv = kv_cache_bytes(&m, ctx, 1, "f16");
+            let kv = kv_cache_bytes(&m, ctx, 1, "f16", "f16");
             let err = (kv.total_mib - real) / real * 100.0;
             assert!(
                 err.abs() < 1.0,
@@ -471,7 +484,7 @@ mod tests {
         let m = gemma4_dims();
         // MEDIDO: np=1->168, 2->208, 4->288, 8->448 MiB
         for (np, real) in [(1u64, 168.0f64), (2, 208.0), (4, 288.0), (8, 448.0)] {
-            let kv = kv_cache_bytes(&m, 8192, np, "f16");
+            let kv = kv_cache_bytes(&m, 8192, np, "f16", "f16");
             let err = (kv.total_mib - real) / real * 100.0;
             assert!(
                 err.abs() < 1.0,
@@ -486,7 +499,7 @@ mod tests {
         let m = gemma4_dims();
         let dense: Vec<f64> = [1u64, 2, 4, 8]
             .iter()
-            .map(|np| kv_cache_bytes(&m, 8192, *np, "f16").dense_bytes)
+            .map(|np| kv_cache_bytes(&m, 8192, *np, "f16", "f16").dense_bytes)
             .collect();
         // La densa reparte el contexto entre ranuras: no cambia.
         assert!((dense[0] - dense[3]).abs() < 1.0);

@@ -171,6 +171,7 @@ export default function DeployView({
           sc.ctxSize,
           sc.nParallel,
           sc.cacheTypeK,
+          sc.cacheTypeV,
           sc.ubatchSize,
           sc.nGpuLayers,
         );
@@ -220,6 +221,38 @@ export default function DeployView({
   );
 
   const gpus = hardware?.gpu ?? [];
+
+  // Los flags booleanos de llama.cpp (`--jinja`, `--flash-attn`,
+  // `--cont-batching`...) no llevan valor. Si el usuario pega uno con un
+  // valor pegado, llama.cpp aborta al arrancar con un error incomprensible.
+  // Se avisa aqui, al escribir, en vez de al arrancar.
+  const BOOLEAN_FLAGS = [
+    "--jinja",
+    "--no-jinja",
+    "--cont-batching",
+    "--no-cont-batching",
+    "--context-shift",
+    "--no-context-shift",
+    "--cache-idle-slots",
+    "--no-cache-idle-slots",
+    "--slots",
+    "--no-slots",
+    "--metrics",
+    "--no-metrics",
+    "--props",
+    "--no-props",
+  ];
+  const extraArgsError = useMemo(() => {
+    const raw = (sc?.extraArgs ?? "").match(/"[^"]*"|\S+/g);
+    if (!raw) return null;
+    const args = raw.map((a) => a.replace(/^"|"$/g, ""));
+    for (let i = 0; i < args.length - 1; i++) {
+      if (BOOLEAN_FLAGS.includes(args[i]) && !args[i + 1].startsWith("--")) {
+        return `\`${args[i]}\` no lleva valor. Escribe solo \`${args[i]}\`, o quítalo.`;
+      }
+    }
+    return null;
+  }, [sc?.extraArgs]);
 
   const saveAsDeployment = useCallback(
     async (name: string) => {
@@ -319,7 +352,7 @@ export default function DeployView({
     <div className="space-y-4 animate-fade-up">
       <header className="flex flex-wrap items-end justify-between gap-4">
         <div>
-          <h1 className="text-lg font-semibold tracking-tight text-ink-100">Despliegue</h1>
+          <h1 className="text-display font-semibold tracking-tight text-ink-100">Despliegue</h1>
           <p className="mt-1 max-w-2xl text-xs leading-relaxed text-ink-400">
             Un modelo, sus compañeros y la configuración del servidor. Guárdalo
             como despliegue para cargarlo de un clic la próxima vez.
@@ -355,7 +388,7 @@ export default function DeployView({
         </div>
       </header>
 
-      <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_19rem]">
+      <div className="grid gap-4 2xl:grid-cols-[minmax(0,1fr)_19rem]">
         {/* ==================== COLUMNA PRINCIPAL ==================== */}
         <div className="space-y-4">
           {/* ---------- MODELO ---------- */}
@@ -416,7 +449,7 @@ export default function DeployView({
                       onChange={(e) => setQuery(e.target.value)}
                     />
                   </div>
-                  <span className="text-[0.75rem] text-ink-400">
+                  <span className="text-label text-ink-400">
                     {visibleCatalog.length} de {catalog.entries.length}
                   </span>
                 </div>
@@ -460,7 +493,7 @@ export default function DeployView({
                             <span className="block truncate text-xs text-ink-200">
                               {e.fileName}
                             </span>
-                            <span className="block truncate text-[0.75rem] text-ink-500">
+                            <span className="block truncate text-label text-ink-500">
                               {e.quant} · {e.arch} · {formatBytes(e.sizeBytes)}
                             </span>
                           </span>
@@ -476,7 +509,7 @@ export default function DeployView({
             )}
 
             {detail && (
-              <div className="mt-3 border-t border-base-800 pt-3 text-[0.75rem] text-ink-400">
+              <div className="mt-3 border-t border-base-800 pt-3 text-label text-ink-400">
                 <span className="font-medium text-ink-300">
                   {detail.fileName} · {detail.arch} · {detail.quant}
                 </span>
@@ -602,7 +635,7 @@ export default function DeployView({
                             {g.name}
                           </span>
                           <span className="mt-0.5 flex flex-wrap items-center gap-1.5">
-                            <span className="mono text-[0.75rem] text-ink-500">
+                            <span className="mono text-label text-ink-500">
                               {id}
                             </span>
                             <span className="chip">
@@ -613,7 +646,7 @@ export default function DeployView({
                                   : g.kind}
                             </span>
                             {g.vramTotalMib > 0 && (
-                              <span className="mono text-[0.75rem] text-ink-500">
+                              <span className="mono text-label text-ink-500">
                                 {(g.vramTotalMib / 1024).toFixed(1)} GB
                               </span>
                             )}
@@ -679,7 +712,7 @@ export default function DeployView({
                     <span className="block text-xs font-medium text-ink-100">
                       Repartir el modelo entre las tarjetas
                     </span>
-                    <span className="mt-0.5 block text-[0.75rem] leading-relaxed text-ink-400">
+                    <span className="mt-0.5 block text-label leading-relaxed text-ink-400">
                       Las capas se reparten entre las GPUs seleccionadas. Con dos
                       tarjetas de 16 GB puedes cargar un modelo que no cabe en
                       una sola.
@@ -777,15 +810,24 @@ export default function DeployView({
                 </Field>
                 <Field
                   label="Argumentos adicionales"
-                  hint='Se añaden al final del comando, así que pisan lo que genere la app. Admite comillas. Ejemplo: --temp 0.7 --top-p 0.9 --jinja "-cnv"'
+                  hint="Se añaden al final del comando, así que pisan lo que genere la app. Admite comillas. Ejemplo: --temp 0.7 --top-p 0.9"
                 >
                   <input
-                    className="field mono text-xs"
+                    className={clsx(
+                      "field mono text-xs",
+                      extraArgsError && "border-danger-500 focus:border-danger-500",
+                    )}
                     value={sc.extraArgs}
                     placeholder="--temp 0.7 --top-p 0.9"
                     onChange={(e) => update({ extraArgs: e.target.value })}
+                    aria-invalid={!!extraArgsError}
                   />
                 </Field>
+                {extraArgsError && (
+                  <p className="mt-1.5 text-label leading-relaxed text-danger-400">
+                    {extraArgsError}
+                  </p>
+                )}
               </div>
             ) : (
               <p className="text-xs text-ink-400">
@@ -809,7 +851,7 @@ export default function DeployView({
             ) : (
               <div className="space-y-3">
                 <div>
-                  <p className="text-[0.75rem] tracking-wide text-ink-400 uppercase">
+                  <p className="text-label tracking-wide text-ink-400 uppercase">
                     Total
                   </p>
                   <p className="mono mt-1 text-2xl leading-none font-semibold text-ink-100">
@@ -846,7 +888,7 @@ export default function DeployView({
                     mono
                   />
                 </dl>
-                <p className="border-t border-base-800 pt-2 text-[0.75rem] leading-relaxed text-ink-400">
+                <p className="border-t border-base-800 pt-2 text-label leading-relaxed text-ink-400">
                   Contexto efectivo{" "}
                   {estimate.ctxPadded.toLocaleString("es-ES")} tokens
                   {estimate.nSwaLayers > 0 && (
@@ -886,7 +928,7 @@ export default function DeployView({
             {flags.length === 0 ? (
               <p className="py-3 text-center text-xs text-ink-400">Sin flags.</p>
             ) : (
-              <div className="mono max-h-52 overflow-y-auto rounded-md bg-base-950 p-2.5 text-[0.75rem] leading-relaxed break-all text-ink-300">
+              <div className="mono max-h-52 overflow-y-auto rounded-md bg-base-950 p-2.5 text-label leading-relaxed break-all text-ink-300">
                 {flags.map((f, i) => (
                   <span key={i}>
                     <span className="text-accent-400">{f}</span>
@@ -913,7 +955,7 @@ export default function DeployView({
                       <span className="block truncate text-xs text-ink-100">
                         {d.name}
                       </span>
-                      <span className="block truncate text-[0.75rem] text-ink-500">
+                      <span className="block truncate text-label text-ink-500">
                         {d.modelPath ? basename(d.modelPath) : "Sin modelo"} ·{" "}
                         {(d.server.ctxSize / 1024).toFixed(0)}k
                       </span>
@@ -935,7 +977,7 @@ export default function DeployView({
           {/* ---------- REGISTRO ---------- */}
           {server?.running && (
             <Section title="Registro" description={server.logFile ?? undefined}>
-              <pre className="mono max-h-48 overflow-auto rounded-md bg-base-950 p-2.5 text-[0.75rem] leading-relaxed text-ink-400">
+              <pre className="mono max-h-48 overflow-auto rounded-md bg-base-950 p-2.5 text-label leading-relaxed text-ink-400">
                 {log || "Sin líneas todavía."}
               </pre>
             </Section>
@@ -1032,7 +1074,7 @@ function ModelSlot({
             </button>
           )}
         </div>
-        <p className="mt-1 text-[0.75rem] text-ink-500">{hint}</p>
+        <p className="mt-1 text-label text-ink-500">{hint}</p>
       </div>
     </div>
   );

@@ -168,7 +168,7 @@ export default function ReleasesView({
     <div className="space-y-5">
       <header className="flex flex-wrap items-end justify-between gap-4">
         <div>
-          <h1 className="text-lg font-semibold tracking-tight text-ink-100">
+          <h1 className="text-display font-semibold tracking-tight text-ink-100">
             llama.cpp
           </h1>
           <p className="mt-1 max-w-2xl text-xs leading-relaxed text-ink-400">
@@ -264,7 +264,7 @@ export default function ReleasesView({
                 </span>
                 <div className="min-w-0 flex-1">
                   <p className="mono text-xs font-medium text-ink-100">{b.tag}</p>
-                  <p className="truncate text-[0.75rem] text-ink-500" title={b.dir}>
+                  <p className="truncate text-label text-ink-500" title={b.dir}>
                     {b.dir}
                   </p>
                 </div>
@@ -313,7 +313,7 @@ export default function ReleasesView({
             : `Solo se ofrecerán los paquetes de ${backendFilter.toUpperCase()}.`}
         </p>
         {gpuNames.length > 0 && (
-          <p className="mt-2 border-t border-base-800 pt-2 text-[0.75rem] text-ink-400">
+          <p className="mt-2 border-t border-base-800 pt-2 text-label text-ink-400">
             Detectado: {gpuNames.join(", ")}
           </p>
         )}
@@ -329,7 +329,7 @@ export default function ReleasesView({
               label={<span className="capitalize">{progress.phase}</span>}
               valueLabel={`${progress.percent.toFixed(0)}%`}
             />
-            <div className="flex justify-between text-[0.75rem] text-ink-500">
+            <div className="flex justify-between text-label text-ink-500">
               <span className="mono">
                 {formatBytes(progress.downloaded)} / {formatBytes(progress.total)}
               </span>
@@ -436,13 +436,13 @@ export default function ReleasesView({
                             )}
                           </div>
                           <p
-                            className="mono mt-0.5 truncate text-[0.75rem] text-ink-500"
+                            className="mono mt-0.5 truncate text-label text-ink-500"
                             title={asset.name}
                           >
                             {asset.name}
                           </p>
                         </div>
-                        <span className="mono shrink-0 text-[0.75rem] text-ink-400">
+                        <span className="mono shrink-0 text-label text-ink-400">
                           {formatBytes(asset.size)}
                         </span>
                         <Button
@@ -516,7 +516,7 @@ export default function ReleasesView({
                       </span>
                     )}
                   </div>
-                  <p className="mt-0.5 text-[0.75rem] text-ink-500">
+                  <p className="mt-0.5 text-label text-ink-500">
                     {formatDate(rel.publishedAt)} ·{" "}
                     {rel.assets.filter((a) => !a.isCudart).length} paquetes
                   </p>
@@ -527,7 +527,7 @@ export default function ReleasesView({
                     target="_blank"
                     rel="noreferrer"
                     onClick={(e) => e.stopPropagation()}
-                    className="btn btn-quiet px-2 py-1 text-[0.75rem]"
+                    className="btn btn-quiet px-2 py-1 text-label"
                     title="Abrir en GitHub"
                   >
                     <ExternalLink size={12} />
@@ -647,11 +647,11 @@ function AssetRow({
             </span>
           )}
         </div>
-        <p className="mono mt-0.5 truncate text-[0.75rem] text-ink-500" title={asset.name}>
+        <p className="mono mt-0.5 truncate text-label text-ink-500" title={asset.name}>
           {asset.name}
         </p>
       </div>
-      <span className="mono shrink-0 text-[0.75rem] text-ink-400">
+      <span className="mono shrink-0 text-label text-ink-400">
         {formatBytes(asset.size)}
       </span>
       <Button

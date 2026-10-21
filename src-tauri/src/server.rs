@@ -72,6 +72,13 @@ pub fn start(
         }
     }
 
+    // Los flags libres se validan ANTES de arrancar: es mucho mas util un
+    // error claro ("--jinja no lleva valor") que un "invalid argument" de
+    // llama.cpp con el servidor a medias.
+    if let Err(e) = crate::config::validate_extra_args(&cfg.extra_args) {
+        return Err(format!("Error en los argumentos adicionales: {e}"));
+    }
+
     let flags = crate::config::config_to_flags(cfg, model_path, mmproj, draft_model);
 
     let logs_dir = crate::config::logs_dir();

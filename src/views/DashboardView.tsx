@@ -6,7 +6,7 @@ import { LiveMeter, Pulse, Readout, Sparkline } from "../components/Telemetry";
 import { basename, formatBytes } from "../lib/format";
 import { api } from "../lib/api";
 import { useTelemetry } from "../lib/useTelemetry";
-import type { Deployment, HardwareReport, ServerStatus } from "../types";
+import type { AppConfig, Deployment, HardwareReport, ServerStatus } from "../types";
 
 type NavTarget = "dashboard" | "deploy" | "releases" | "settings";
 
@@ -15,11 +15,15 @@ export default function DashboardView({
   server,
   selectedModel,
   onNavigate,
+  onConfigChange,
+  onModelPicked,
 }: {
   hardware: HardwareReport | null;
   server: ServerStatus | null;
   selectedModel: string | null;
   onNavigate: (v: NavTarget) => void;
+  onConfigChange: (c: AppConfig) => void;
+  onModelPicked: (m: string | null, mm: string | null, d: string | null) => void;
 }) {
   const toast = useToast();
   const [deployments, setDeployments] = useState<Deployment[]>([]);
@@ -35,14 +39,19 @@ export default function DashboardView({
   const applyDeployment = useCallback(
     async (d: Deployment) => {
       try {
-        await api.applyDeployment(d.id);
-        toast.push(`«${d.name}» cargado. Ya puedes arrancar.`, "success");
+        // El backend devuelve la config ya aplicada. Si se descarta, el
+        // modelo seleccionado sigue siendo el anterior y el servidor arranca
+        // con otro: el toast prometia una cosa y hacia otra.
+        const [cfg] = await api.applyDeployment(d.id);
+        onConfigChange(cfg);
+        onModelPicked(cfg.lastModel, cfg.lastMmproj, cfg.lastDraftModel);
+        toast.push(`«${d.name}» aplicado. Ya puedes arrancar.`, "success");
         setDeployments(await api.listDeployments());
       } catch (e) {
         toast.push(`No se pudo aplicar: ${String(e)}`, "danger");
       }
     },
-    [toast],
+    [toast, onConfigChange, onModelPicked],
   );
 
   const probe = useCallback(async () => {
@@ -66,7 +75,7 @@ export default function DashboardView({
     <div className="space-y-4 animate-fade-up">
       <header className="flex flex-wrap items-end justify-between gap-4">
         <div>
-          <h1 className="text-lg font-semibold tracking-tight text-ink-100">Panel</h1>
+          <h1 className="text-display font-semibold tracking-tight text-ink-100">Panel</h1>
           <p className="mt-1 text-xs text-ink-400">
             Estado medido del equipo y del servidor. Los valores se releen cada
             segundo.
@@ -140,7 +149,7 @@ export default function DashboardView({
               Medir velocidad
             </Button>
             {tel.speed && (
-              <span className="mono text-[0.75rem] text-ink-300">
+              <span className="mono text-label text-ink-300">
                 {tel.speed.predictedPerSecond.toFixed(1)} tok/s generación ·{" "}
                 {tel.speed.promptPerSecond.toFixed(0)} tok/s prompt
               </span>
@@ -150,7 +159,7 @@ export default function DashboardView({
       </Section>
 
       {/* ================= RECURSOS ================= */}
-      <div className="grid gap-4 lg:grid-cols-2">
+      <div className="grid gap-4 xl:grid-cols-2">
         {/* GPU */}
         <Section
           title="Tarjetas gráficas"
@@ -175,7 +184,7 @@ export default function DashboardView({
                         <p className="truncate text-xs font-medium text-ink-100">
                           {g.name}
                         </p>
-                        <p className="mt-0.5 flex flex-wrap items-center gap-1.5 text-[0.75rem] text-ink-400">
+                        <p className="mt-0.5 flex flex-wrap items-center gap-1.5 text-label text-ink-400">
                           <span className="mono uppercase">
                             {g.api}
                             {g.index}
@@ -195,7 +204,11 @@ export default function DashboardView({
                         <LiveMeter
                           value={used}
                           max={g.vramTotalMib}
-                          label="VRAM en uso"
+                          label={
+                            running
+                              ? "VRAM reservada (sistema + modelo)"
+                              : "VRAM reservada por el sistema"
+                          }
                           valueLabel={`${formatBytes(used * 1024 * 1024)} / ${formatBytes(g.vramTotalMib * 1024 * 1024)}`}
                           tone={ratio > 0.95 ? "danger" : ratio > 0.85 ? "warn" : undefined}
                         />
@@ -208,7 +221,7 @@ export default function DashboardView({
                         </div>
                       </>
                     ) : (
-                      <p className="text-[0.75rem] text-ink-500">
+                      <p className="text-label text-ink-500">
                         VRAM no disponible desde este dispositivo.
                       </p>
                     )}
@@ -233,7 +246,7 @@ export default function DashboardView({
                 <p className="truncate text-xs font-medium text-ink-100">
                   {hardware?.cpu.model ?? "—"}
                 </p>
-                <p className="mt-0.5 text-[0.75rem] text-ink-400">
+                <p className="mt-0.5 text-label text-ink-400">
                   {hardware?.cpu.physicalCores
                     ? `${hardware.cpu.physicalCores} núcleos físicos · ${hardware.cpu.logicalThreads} hilos`
                     : `${hardware?.cpu.logicalThreads ?? "?"} hilos`}
@@ -323,7 +336,7 @@ export default function DashboardView({
                     <span className="block truncate text-xs font-medium text-ink-100">
                       {d.name}
                     </span>
-                    <span className="mt-0.5 block truncate text-[0.75rem] text-ink-400">
+                    <span className="mt-0.5 block truncate text-label text-ink-400">
                       {d.modelPath ? basename(d.modelPath) : "Sin modelo"} ·{" "}
                       {(d.server.ctxSize / 1024).toFixed(0)}k ctx
                     </span>

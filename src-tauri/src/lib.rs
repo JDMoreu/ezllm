@@ -402,7 +402,8 @@ async fn estimate_memory(
     model_path: String,
     ctx: u32,
     n_parallel: u32,
-    cache_type: String,
+    cache_type_k: String,
+    cache_type_v: String,
     ubatch: u32,
     n_gpu_layers: Option<i64>,
 ) -> CmdResult<memory::MemoryEstimate> {
@@ -413,7 +414,8 @@ async fn estimate_memory(
             &dims,
             ctx as u64,
             n_parallel as u64,
-            &cache_type,
+            &cache_type_k,
+            &cache_type_v,
             ubatch as u64,
             n_gpu_layers,
         ))

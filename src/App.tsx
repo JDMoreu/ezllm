@@ -191,6 +191,8 @@ function Shell() {
             server={server}
             selectedModel={selectedModel}
             onNavigate={(v) => setView(v as ViewId)}
+            onConfigChange={saveConfig}
+            onModelPicked={onModelPicked}
           />
         );
     }
@@ -205,13 +207,13 @@ function Shell() {
           esté disponible desde cualquier sección sin repetir el botón en
           cada vista.
           ================================================================== */}
-      <aside className="flex w-[13.5rem] shrink-0 flex-col border-r border-base-800 bg-base-950">
+      <aside className="app-sidebar flex w-[13.5rem] shrink-0 flex-col border-r border-base-800 bg-base-950">
         {/* Marca */}
         <div className="flex h-12 shrink-0 items-center gap-2.5 border-b border-base-800 px-4">
           <span className="flex h-6 w-6 items-center justify-center rounded-md bg-accent-500/15 text-accent-400">
             <Zap size={13} />
           </span>
-          <span className="text-[0.8125rem] font-semibold tracking-tight text-ink-100">
+          <span className="app-sidebar-label text-[0.8125rem] font-semibold tracking-tight text-ink-100">
             EzLlamaCpp
           </span>
         </div>
@@ -227,7 +229,7 @@ function Shell() {
                 onClick={() => setView(item.id)}
                 title={item.hint}
                 className={clsx(
-                  "group flex w-full cursor-pointer items-center gap-2.5 rounded-md px-2.5 py-2 text-left text-xs font-medium transition-colors duration-150",
+                  "app-sidebar-btn group flex w-full cursor-pointer items-center gap-2.5 rounded-md px-2.5 py-2 text-left text-xs font-medium transition-colors duration-150",
                   active
                     ? "bg-base-850 text-ink-100"
                     : "text-ink-400 hover:bg-base-900 hover:text-ink-200",
@@ -244,7 +246,7 @@ function Shell() {
                 >
                   <Icon size={14} />
                 </span>
-                {item.label}
+                <span className="app-sidebar-label">{item.label}</span>
               </button>
             );
           })}
@@ -253,7 +255,7 @@ function Shell() {
         {/* --- Control del servidor: único en toda la app --- */}
         <div className="shrink-0 space-y-2.5 border-t border-base-800 p-3">
           <div className="flex items-center justify-between gap-2">
-            <span className="text-[0.6875rem] font-medium tracking-wide text-ink-400 uppercase">
+            <span className="app-sidebar-section text-meta font-medium tracking-wide text-ink-400 uppercase">
               Servidor
             </span>
             <span
@@ -269,14 +271,14 @@ function Shell() {
             />
           </div>
 
-          <p className="mono truncate text-[0.6875rem] text-ink-400">
+          <p className="mono truncate text-meta text-ink-400">
             {server?.running
               ? `http://${server.host}:${server.port}`
               : "Detenido"}
           </p>
 
           {server?.running && server.models.length > 0 && (
-            <p className="truncate text-[0.6875rem] text-ink-500" title={server.models.join(", ")}>
+            <p className="truncate text-meta text-ink-500" title={server.models.join(", ")}>
               {server.models.join(", ")}
             </p>
           )}
@@ -305,7 +307,7 @@ function Shell() {
 
       {/* --- Contenido --- */}
       <main className="min-w-0 flex-1 overflow-y-auto">
-        <div className="mx-auto max-w-[76rem] px-6 py-5">{content}</div>
+        <div className="app-content mx-auto max-w-[76rem] px-6 py-5">{content}</div>
       </main>
     </div>
   );
