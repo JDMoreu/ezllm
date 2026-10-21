@@ -1,26 +1,23 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import clsx from "clsx";
-import { Activity, Cpu, Download, Layers, Settings2, SlidersHorizontal, Zap } from "lucide-react";
+import { Activity, Cpu, Download, Layers, Zap } from "lucide-react";
 
 import { api } from "./lib/api";
 import { ToastProvider, useToast } from "./components/ui";
 import type { AppConfig, HardwareReport, ServerStatus } from "./types";
 
 import ReleasesView from "./views/ReleasesView";
-import ModelsView from "./views/ModelsView";
-import ConfigureView from "./views/ConfigureView";
 import DashboardView from "./views/DashboardView";
+import DeployView from "./views/DeployView";
 import SettingsView from "./views/SettingsView";
-import ProfilesView from "./views/ProfilesView";
 
-type ViewId = "dashboard" | "releases" | "models" | "configure" | "profiles" | "settings";
+type ViewId = "dashboard" | "deploy" | "releases" | "settings";
 
 const NAV: { id: ViewId; label: string; icon: typeof Activity; hint: string }[] = [
   { id: "dashboard", label: "Panel", icon: Activity, hint: "Estado del equipo y del servidor" },
   { id: "releases", label: "llama.cpp", icon: Download, hint: "Instalar binarios oficiales" },
-  { id: "models", label: "Modelos", icon: Layers, hint: "Catálogo GGUF, MTP y mmproj" },
-  { id: "configure", label: "Configurar", icon: Settings2, hint: "Parámetros del servidor" },
-  { id: "profiles", label: "Perfiles", icon: SlidersHorizontal, hint: "Modelos con su configuración" },
+  { id: "deploy", label: "Despliegue", icon: Layers, hint: "Modelo + configuración en un solo lugar" },
+  { id: "releases", label: "llama.cpp", icon: Download, hint: "Instalar binarios oficiales" },
   { id: "settings", label: "Ajustes", icon: Cpu, hint: "Rutas, token y equipo" },
 ];
 
@@ -97,7 +94,18 @@ function Shell() {
   const handleStart = useCallback(async () => {
     setBusy(true);
     try {
-      const st = await api.startServer(selectedModel, selectedMmproj, selectedDraft);
+      // Si hay un despliegue activo, mandan sus modelos y su configuracion.
+      let model = selectedModel;
+      let mmproj = selectedMmproj;
+      let draft = selectedDraft;
+      if (config?.activeDeploymentId) {
+        const [cfg] = await api.applyDeployment(config.activeDeploymentId);
+        model = cfg.lastModel;
+        mmproj = cfg.lastMmproj;
+        draft = cfg.lastDraftModel;
+        setConfig(cfg);
+      }
+      const st = await api.startServer(model, mmproj, draft);
       setServer(st);
       toast.push(
         st.health
@@ -111,7 +119,7 @@ function Shell() {
     } finally {
       setBusy(false);
     }
-  }, [selectedModel, selectedMmproj, selectedDraft, toast, refreshHardware]);
+  }, [config, selectedModel, selectedMmproj, selectedDraft, toast, refreshHardware]);
 
   const handleStop = useCallback(async () => {
     setBusy(true);
@@ -146,49 +154,26 @@ function Shell() {
 
   const content = useMemo(() => {
     switch (view) {
-      case "releases":
-        return <ReleasesView config={config} onConfigChange={saveConfig} />;
-      case "models":
+      case "deploy":
         return (
-          <ModelsView
+          <DeployView
+            config={config}
+            server={server}
+            hardware={hardware}
             modelsDir={modelsDir}
             onModelsDirChange={setModelsDir}
             selectedModel={selectedModel}
             selectedMmproj={selectedMmproj}
             selectedDraft={selectedDraft}
             onSelect={onModelPicked}
-          />
-        );
-      case "configure":
-        return (
-          <ConfigureView
-            config={config}
-            server={server}
-            hardware={hardware}
-            selectedModel={selectedModel}
-            selectedMmproj={selectedMmproj}
-            selectedDraft={selectedDraft}
             onConfigChange={saveConfig}
             onStart={handleStart}
             onStop={handleStop}
             busy={busy}
           />
         );
-      case "profiles":
-        return (
-          <ProfilesView
-            config={config}
-            selectedModel={selectedModel}
-            selectedMmproj={selectedMmproj}
-            selectedDraft={selectedDraft}
-            onConfigChange={saveConfig}
-            onApply={(cfg) => {
-              setSelectedModel(cfg.lastModel);
-              setSelectedMmproj(cfg.lastMmproj);
-              setSelectedDraft(cfg.lastDraftModel);
-            }}
-          />
-        );
+      case "releases":
+        return <ReleasesView config={config} onConfigChange={saveConfig} />;
       case "settings":
         return (
           <SettingsView
@@ -204,7 +189,7 @@ function Shell() {
             hardware={hardware}
             server={server}
             selectedModel={selectedModel}
-            onNavigate={setView}
+            onNavigate={(v) => setView(v as ViewId)}
             onStart={handleStart}
             onStop={handleStop}
             busy={busy}

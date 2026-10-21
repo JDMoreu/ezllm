@@ -136,6 +136,34 @@ Sección nueva **Perfiles**:
 - Se pueden instalar varias versiones a la vez (Vulkan, CUDA, ROCm…), cada
   una en su carpeta `llama.cpp/<tag>/`, y se puede borrar una concreta.
 
+## Rediseño de la experiencia (unificación)
+
+El usuario pidió que modelos + configuración + perfiles quedaran en un solo
+lugar, sin tener que ir de sección en sección. Se creó `DeployView.tsx`
+que unifica todo:
+
+- **Modelos**: modelo principal + mmproj + MTP, cada uno con su botón
+  «Buscar» que abre el explorador nativo. Debajo, carpeta de escaneo y
+  catálogo con click-to-asign.
+- **Configuración**: contexto, lotes, GPU (con checkboxes por tarjeta y
+  reparto), flash attention, caché, hilos, red, alias, flags avanzados.
+- **Memoria en vivo**: estimación a la derecha, actualizada al cambiar
+  cualquier parámetro.
+- **Comando**: se muestra el comando exacto que se ejecutará, con botón
+  de copiar.
+- **Presets**: selector de perfil en el encabezado + botón
+  «Guardar como perfil». Un perfil guarda modelo + mmproj + MTP + toda la
+  configuración + flags. Se aplican de un clic.
+
+### Navegación final
+- Panel
+- Despliegue (unificado)
+- llama.cpp (instalación de binarios)
+- Ajustes
+
+Se eliminaron las vistas separadas de Modelos, Configurar y Perfiles para
+evitar la fragmentación.
+
 ## Prueba de regresión de la UI
 
 El asset recomendado (Vulkan) quedaba al final de la lista: había que hacer

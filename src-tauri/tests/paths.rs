@@ -12,3 +12,8 @@ fn prints_data_paths() {
 fn prints_flags_from_saved_config() {
     println!("{}", ezllamacpp_lib::live_check::flags_from_saved_config());
 }
+
+#[test]
+fn prints_server_lookup() {
+    println!("{}", ezllamacpp_lib::live_check::find_server_report());
+}

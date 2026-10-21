@@ -1,3 +1,4 @@
+import { useCallback, useEffect, useState } from "react";
 import {
   ArrowRight,
   Cpu,
@@ -10,9 +11,10 @@ import {
   Zap,
 } from "lucide-react";
 
-import { Button, Card, Meter, StatusDot } from "../components/ui";
-import { basename, formatBytes, formatElapsed } from "../lib/format";
-import type { HardwareReport, ServerStatus } from "../types";
+import { Button, Card, Meter, StatusDot, useToast } from "../components/ui";
+import { basename, formatBytes, formatElapsed, formatNumber } from "../lib/format";
+import { api } from "../lib/api";
+import type { Deployment, HardwareReport, ServerStatus } from "../types";
 
 type NavTarget = "dashboard" | "releases" | "models" | "configure" | "settings";
 
@@ -33,6 +35,30 @@ export default function DashboardView({
   onStop: () => void;
   busy: boolean;
 }) {
+  const toast = useToast();
+  const [deployments, setDeployments] = useState<Deployment[]>([]);
+
+  // Los despliegues tambien se ven aqui: aplicar uno y arrancar, sin
+  // saltar a otra seccion.
+  useEffect(() => {
+    api
+      .listDeployments()
+      .then(setDeployments)
+      .catch(() => {});
+  }, []);
+
+  const applyDeployment = useCallback(
+    async (d: Deployment) => {
+      try {
+        await api.applyDeployment(d.id);
+        toast.push(`"${d.name}" listo. Ya puedes arrancar.`, "success");
+        setDeployments(await api.listDeployments());
+      } catch (e) {
+        toast.push(`No se pudo aplicar: ${String(e)}`, "danger");
+      }
+    },
+    [toast],
+  );
   const gpu = hardware?.gpu[0];
 
   const steps: {
@@ -211,6 +237,39 @@ export default function DashboardView({
           </div>
         </Card>
       </div>
+
+      {/* --- Despliegues: aplicar y arrancar, sin salir del Panel --- */}
+      {deployments.length > 0 && (
+        <Card
+          title="Despliegues"
+          subtitle="Aplica uno y arranca. Cada uno trae su modelo y su configuración."
+        >
+          <ul className="grid gap-2 sm:grid-cols-2">
+            {deployments.map((d) => (
+              <li
+                key={d.id}
+                className="flex items-center gap-3 rounded-lg border border-base-750 bg-base-850 px-3 py-2.5"
+              >
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-xs font-medium text-ink-100">{d.name}</p>
+                  <p className="mt-0.5 flex flex-wrap items-center gap-1.5 text-[0.6875rem] text-ink-500">
+                    <span className="mono">ctx {formatNumber(d.server.ctxSize)}</span>
+                    {d.mmprojPath && <span className="chip chip-violet">multimodal</span>}
+                    {d.draftPath && <span className="chip">MTP</span>}
+                  </p>
+                </div>
+                <Button
+                  size="sm"
+                  icon={<Play size={11} />}
+                  onClick={() => applyDeployment(d)}
+                >
+                  Usar
+                </Button>
+              </li>
+            ))}
+          </ul>
+        </Card>
+      )}
 
       {/* --- Pasos --- */}
       <Card title="Puesta en marcha" subtitle="Tres pasos y el servidor responde.">

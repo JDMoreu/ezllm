@@ -379,7 +379,10 @@ async fn start_server(
 ) -> CmdResult<ServerStatus> {
     let cfg = state.config.lock().await.clone();
     let exe = current_llama_server(&cfg).ok_or_else(|| {
-        "No se encuentra llama-server. Instala una versión de llama.cpp primero.".to_string()
+        format!(
+            "No se encuentra llama-server. Se busco en: {}. Instala una version de llama.cpp primero.",
+            cfg.llama_dir.as_deref().unwrap_or("(sin ruta)")
+        )
     })?;
 
     tokio::task::spawn_blocking(move || {
@@ -442,84 +445,87 @@ fn context_steps(ctx_max: u32) -> Vec<u32> {
     config::suggest_context_steps(ctx_max as u64)
 }
 
-// --- Perfiles de modelo -----------------------------------------------------
+// --- Despliegues (modelo + configuración) ----------------------------------
 
-/// Lista los perfiles guardados.
+/// Lista los despliegues guardados.
 #[tauri::command]
-async fn list_profiles(state: State<'_, AppState>) -> CmdResult<Vec<config::ModelProfile>> {
-    Ok(state.config.lock().await.profiles.clone())
+async fn list_deployments(state: State<'_, AppState>) -> CmdResult<Vec<config::Deployment>> {
+    Ok(state.config.lock().await.deployments.clone())
 }
 
-/// Guarda un perfil (nuevo o actualizado por su id).
+/// Guarda un despliegue (nuevo o actualizado por su id).
 #[tauri::command]
-async fn save_profile(
+async fn save_deployment(
     state: State<'_, AppState>,
-    profile: config::ModelProfile,
-) -> CmdResult<config::ModelProfile> {
+    deployment: config::Deployment,
+) -> CmdResult<config::Deployment> {
     let mut cfg = state.config.lock().await;
-    let mut profile = profile;
-    if profile.id.is_empty() {
-        profile.id = format!("p{}", now_millis());
+    let mut deployment = deployment;
+    if deployment.id.is_empty() {
+        deployment.id = format!("d{}", now_millis());
     }
-    if profile.created_at == 0 {
-        profile.created_at = now_millis();
+    if deployment.created_at == 0 {
+        deployment.created_at = now_millis();
     }
-    match cfg.profiles.iter().position(|p| p.id == profile.id) {
-        Some(i) => cfg.profiles[i] = profile.clone(),
-        None => cfg.profiles.push(profile.clone()),
+    match cfg.deployments.iter().position(|d| d.id == deployment.id) {
+        Some(i) => cfg.deployments[i] = deployment.clone(),
+        None => cfg.deployments.push(deployment.clone()),
     }
     config::save(&cfg)?;
-    Ok(profile)
+    Ok(deployment)
 }
 
-/// Elimina un perfil.
+/// Elimina un despliegue.
 #[tauri::command]
-async fn delete_profile(state: State<'_, AppState>, id: String) -> CmdResult<String> {
+async fn delete_deployment(state: State<'_, AppState>, id: String) -> CmdResult<String> {
     let mut cfg = state.config.lock().await;
-    cfg.profiles.retain(|p| p.id != id);
-    if cfg.active_profile_id.as_deref() == Some(id.as_str()) {
-        cfg.active_profile_id = None;
+    cfg.deployments.retain(|d| d.id != id);
+    if cfg.active_deployment_id.as_deref() == Some(id.as_str()) {
+        cfg.active_deployment_id = None;
     }
     config::save(&cfg)?;
-    Ok(format!("Perfil eliminado"))
+    Ok("Despliegue eliminado".to_string())
 }
 
-/// Aplica un perfil: su configuración pasa a ser la configuración activa y
+/// Aplica un despliegue: su configuración pasa a ser la configuración activa y
 /// sus modelos quedan seleccionados.
 #[tauri::command]
-async fn apply_profile(
+async fn apply_deployment(
     state: State<'_, AppState>,
     id: String,
-) -> CmdResult<(AppConfig, config::ModelProfile)> {
+) -> CmdResult<(AppConfig, config::Deployment)> {
     let mut cfg = state.config.lock().await;
-    let Some(profile) = cfg.profiles.iter().find(|p| p.id == id).cloned() else {
-        return Err(format!("No existe el perfil {id}"));
+    let Some(deployment) = cfg.deployments.iter().find(|d| d.id == id).cloned() else {
+        return Err(format!("No existe el despliegue {id}"));
     };
-    cfg.server = profile.server.clone();
-    cfg.last_model = profile.model_path.clone();
-    cfg.last_mmproj = profile.mmproj_path.clone();
-    cfg.last_draft_model = profile.draft_path.clone();
-    cfg.active_profile_id = Some(profile.id.clone());
+    // Solo se sustituye la configuracion del SERVIDOR y los modelos
+    // seleccionados. Las rutas (models_dir, llama_dir) son globales de la
+    // app: un despliegue no puede cambiarlas.
+    cfg.server = deployment.server.clone();
+    cfg.last_model = deployment.model_path.clone();
+    cfg.last_mmproj = deployment.mmproj_path.clone();
+    cfg.last_draft_model = deployment.draft_path.clone();
+    cfg.active_deployment_id = Some(deployment.id.clone());
     config::save(&cfg)?;
-    Ok((cfg.clone(), profile))
+    Ok((cfg.clone(), deployment))
 }
 
-/// Duplica un perfil para poder variants sin perder el original.
+/// Duplica un despliegue para poder variants sin perder el original.
 #[tauri::command]
-async fn duplicate_profile(
+async fn duplicate_deployment(
     state: State<'_, AppState>,
     id: String,
     new_name: String,
-) -> CmdResult<config::ModelProfile> {
+) -> CmdResult<config::Deployment> {
     let mut cfg = state.config.lock().await;
-    let Some(source) = cfg.profiles.iter().find(|p| p.id == id).cloned() else {
-        return Err(format!("No existe el perfil {id}"));
+    let Some(source) = cfg.deployments.iter().find(|d| d.id == id).cloned() else {
+        return Err(format!("No existe el despliegue {id}"));
     };
     let mut copy = source;
-    copy.id = format!("p{}", now_millis());
+    copy.id = format!("d{}", now_millis());
     copy.name = new_name;
     copy.created_at = now_millis();
-    cfg.profiles.push(copy.clone());
+    cfg.deployments.push(copy.clone());
     config::save(&cfg)?;
     Ok(copy)
 }
@@ -672,11 +678,11 @@ pub fn run() {
             list_binaries,
             open_folder,
             bootstrap,
-            list_profiles,
-            save_profile,
-            delete_profile,
-            apply_profile,
-            duplicate_profile,
+            list_deployments,
+            save_deployment,
+            delete_deployment,
+            apply_deployment,
+            duplicate_deployment,
         ])
         .run(tauri::generate_context!())
         .expect("error al iniciar EzLlamaCpp");

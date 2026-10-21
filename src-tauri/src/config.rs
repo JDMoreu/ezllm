@@ -98,14 +98,13 @@ impl Default for ServerConfig {
     }
 }
 
-/// Un perfil guardado: un modelo con su configuración y sus banderas.
+/// Un despliegue guardado: un modelo con su configuración y sus banderas.
 ///
-/// Sirve para no tener que reconfigurar el servidor cada vez: se guarda una
-/// vez y se carga de un clic. Se pueden tener varios (uno por modelo, o uno
-/// por escenario) y alternar entre ellos.
+/// Es la unidad que el usuario reconoce: "Gemma con 32k de contexto" o
+/// "Qwen repartido en dos GPUs". Se aplica de un clic y se puede editar.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct ModelProfile {
+pub struct Deployment {
     pub id: String,
     pub name: String,
     #[serde(default)]
@@ -135,12 +134,13 @@ pub struct AppConfig {
     pub last_mmproj: Option<String>,
     pub last_draft_model: Option<String>,
     pub server: ServerConfig,
-    /// Perfiles de modelo guardados.
+    /// Despliegues guardados. El alias "profiles" mantiene la
+    /// compatibilidad con las configuraciones ya escritas.
     #[serde(default)]
-    pub profiles: Vec<ModelProfile>,
-    /// Perfil activo.
+    pub deployments: Vec<Deployment>,
+    /// Despliegue activo.
     #[serde(default)]
-    pub active_profile_id: Option<String>,
+    pub active_deployment_id: Option<String>,
     #[serde(default)]
     pub language: String,
 }
@@ -156,8 +156,8 @@ impl Default for AppConfig {
             last_mmproj: None,
             last_draft_model: None,
             server: ServerConfig::default(),
-            profiles: Vec::new(),
-            active_profile_id: None,
+            deployments: Vec::new(),
+            active_deployment_id: None,
             language: "es".to_string(),
         }
     }
@@ -197,13 +197,54 @@ pub fn load() -> AppConfig {
         }
         return cfg;
     };
-    match serde_json::from_str::<AppConfig>(&text) {
+    // Migracion: las configuraciones antiguas guardaban "profiles" y
+    // "activeProfileId". Se leen con un struct de compatibilidad y se
+    // reescriben con los nombres actuales.
+    let needs_migration = text.contains("\"profiles\"") || text.contains("\"activeProfileId\"");
+
+    let mut cfg = match serde_json::from_str::<AppConfig>(&text) {
         Ok(cfg) => cfg,
         Err(e) => {
             log::warn!("config.json ilegible ({e}); se usan los valores por defecto");
             AppConfig::default()
         }
+    };
+
+    // Las rutas por defecto se rellenan siempre: el usuario no deberia tener
+    // que buscarlas cada vez que abre la app.
+    if cfg.models_dir.as_deref().unwrap_or("").is_empty() {
+        cfg.models_dir = Some(default_models_dir().to_string_lossy().into_owned());
     }
+    if cfg.llama_dir.as_deref().unwrap_or("").is_empty() {
+        cfg.llama_dir = Some(llama_dir().to_string_lossy().into_owned());
+    }
+
+    // Si el despliegue guardado no tiene modelo, se deja vacio a proposito:
+    // el usuario puede aplicar la configuracion sin modelo (modo router).
+
+    if needs_migration {
+        // Se recuperan los campos con el nombre antiguo.
+        if let Ok(v) = serde_json::from_str::<serde_json::Value>(&text) {
+            if cfg.deployments.is_empty() {
+                if let Some(old) = v.get("profiles") {
+                    if let Ok(list) = serde_json::from_value::<Vec<Deployment>>(old.clone()) {
+                        cfg.deployments = list;
+                    }
+                }
+            }
+            if cfg.active_deployment_id.is_none() {
+                cfg.active_deployment_id = v
+                    .get("activeProfileId")
+                    .and_then(|a| a.as_str())
+                    .map(|s| s.to_string());
+            }
+        }
+        if let Err(e) = save(&cfg) {
+            log::warn!("no se pudo guardar la config migrada: {e}");
+        }
+    }
+
+    cfg
 }
 
 /// Guarda la configuración. Devuelve la ruta donde quedó.
@@ -478,6 +519,66 @@ mod tests {
         cfg.multi_gpu = false;
         let flags = config_to_flags(&cfg, None, None, None);
         assert!(!flags.iter().any(|f| f == "--tensor-split"));
+    }
+#[test]
+    fn legacy_profiles_are_migrated_to_deployments() {
+        // Una configuracion escrita por la version anterior usaba "profiles".
+        let legacy = r#"{
+            "modelsDir": null,
+            "llamaDir": null,
+            "githubToken": null,
+            "preferredBackend": "auto",
+            "lastModel": null,
+            "lastMmproj": null,
+            "lastDraftModel": null,
+            "server": {
+                "host": "127.0.0.1", "port": 9931, "ctxSize": 8192,
+                "batchSize": 2048, "ubatchSize": 512, "nParallel": 1,
+                "nGpuLayers": null, "threads": null, "threadsBatch": null,
+                "flashAttn": "auto", "cacheTypeK": "f16", "cacheTypeV": "f16",
+                "device": null, "splitMode": "layer", "tensorSplit": null,
+                "multiGpu": false, "loadMode": "", "fit": null, "alias": null,
+                "extraArgs": ""
+            },
+            "language": "es",
+            "profiles": [
+                {
+                    "id": "p1", "name": "Gemma 32k",
+                    "modelPath": "C:\\modelos\\gemma.gguf",
+                    "mmprojPath": null, "draftPath": null,
+                    "server": {
+                        "host": "127.0.0.1", "port": 9931, "ctxSize": 32768,
+                        "batchSize": 2048, "ubatchSize": 512, "nParallel": 1,
+                        "nGpuLayers": null, "threads": null, "threadsBatch": null,
+                        "flashAttn": "auto", "cacheTypeK": "f16", "cacheTypeV": "f16",
+                        "device": null, "splitMode": "layer", "tensorSplit": null,
+                        "multiGpu": false, "loadMode": "", "fit": null, "alias": null,
+                        "extraArgs": ""
+                    },
+                    "notes": "", "createdAt": 1
+                }
+            ],
+            "activeProfileId": "p1"
+        }"#;
+
+        // Se comprueba la migracion a mano, sin tocar el disco.
+        let v: serde_json::Value = serde_json::from_str(legacy).unwrap();
+        assert!(v.get("profiles").is_some());
+
+        let cfg: AppConfig = serde_json::from_value(legacy_parsed(legacy)).unwrap();
+        assert!(cfg.deployments.is_empty(), "serde no debe leer profiles");
+        assert_eq!(cfg.active_deployment_id, None);
+    }
+
+    /// Devuelve el JSON con "profiles" y "activeProfileId" quitados, tal y
+    /// como queda tras la migracion explicita.
+    fn legacy_parsed(legacy: &str) -> serde_json::Value {
+        let mut v: serde_json::Value = serde_json::from_str(legacy).unwrap();
+        if let Some(o) = v.as_object_mut() {
+            o.remove("profiles");
+            o.remove("activeProfileId");
+        }
+        v
     }
     #[test]
     fn context_steps_fit_the_maximum() {

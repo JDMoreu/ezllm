@@ -77,3 +77,28 @@ pub fn flags_from_saved_config() -> String {
     );
     flags.join(" ")
 }
+
+/// Comprueba si la app encuentra el llama-server instalado.
+pub fn find_server_report() -> String {
+    let cfg = crate::config::load();
+    let dir = cfg
+        .llama_dir
+        .clone()
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(crate::config::llama_dir);
+    let mut out = format!("llama_dir = {}\n", dir.display());
+    out.push_str(&format!("existe  = {}\n", dir.exists()));
+    match crate::models::find_llama_server(&dir) {
+        Some(p) => out.push_str(&format!("encontrado = {}\n", p.display())),
+        None => {
+            out.push_str("encontrado = NO\n");
+            out.push_str("contenido:\n");
+            if let Ok(entries) = std::fs::read_dir(&dir) {
+                for e in entries.flatten() {
+                    out.push_str(&format!("  {}\n", e.path().display()));
+                }
+            }
+        }
+    }
+    out
+}

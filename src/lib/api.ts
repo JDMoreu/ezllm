@@ -10,8 +10,8 @@ import type {
   InstalledBuild,
   InstallResult,
   MemoryEstimate,
+  Deployment,
   ModelInfo,
-  ModelProfile,
   ReleaseView,
   ServerStatus,
   StableRelease,
@@ -79,14 +79,24 @@ export const api = {
   ) => invoke<string[]>("preview_flags", { modelPath, mmproj, draftModel }),
   contextSteps: (ctxMax: number) => invoke<number[]>("context_steps", { ctxMax }),
 
+  // --- Despliegues --------------------------------------------------------
+  listDeployments: () => invoke<Deployment[]>("list_deployments"),
+  saveDeployment: (deployment: Deployment) =>
+    invoke<Deployment>("save_deployment", { deployment }),
+  deleteDeployment: (id: string) => invoke<string>("delete_deployment", { id }),
+  applyDeployment: (id: string) =>
+    invoke<[AppConfig, Deployment]>("apply_deployment", { id }),
+  duplicateDeployment: (id: string, newName: string) =>
+    invoke<Deployment>("duplicate_deployment", { id, newName }),
+
   // --- Perfiles -----------------------------------------------------------
-  listProfiles: () => invoke<ModelProfile[]>("list_profiles"),
-  saveProfile: (profile: ModelProfile) => invoke<ModelProfile>("save_profile", { profile }),
+  listProfiles: () => invoke<Deployment[]>("list_profiles"),
+  saveProfile: (profile: Deployment) => invoke<Deployment>("save_profile", { profile }),
   deleteProfile: (id: string) => invoke<string>("delete_profile", { id }),
   applyProfile: (id: string) =>
-    invoke<[AppConfig, ModelProfile]>("apply_profile", { id }),
+    invoke<[AppConfig, Deployment]>("apply_profile", { id }),
   duplicateProfile: (id: string, newName: string) =>
-    invoke<ModelProfile>("duplicate_profile", { id, newName }),
+    invoke<Deployment>("duplicate_profile", { id, newName }),
 
   // --- Utilidades --------------------------------------------------------
   llamaServerPath: () => invoke<string | null>("llama_server_path"),

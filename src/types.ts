@@ -29,8 +29,11 @@ export interface ServerConfig {
   extraArgs: string;
 }
 
-/** Un perfil guardado: un modelo con su configuración y sus banderas. */
-export interface ModelProfile {
+/**
+ * Un despliegue guardado: un modelo con su configuracion, sus modulos
+ * opcionales y sus banderas. Se aplica de un clic.
+ */
+export interface Deployment {
   id: string;
   name: string;
   modelPath: string | null;
@@ -50,8 +53,8 @@ export interface AppConfig {
   lastMmproj: string | null;
   lastDraftModel: string | null;
   server: ServerConfig;
-  profiles: ModelProfile[];
-  activeProfileId: string | null;
+  deployments: Deployment[];
+  activeDeploymentId: string | null;
   language: string;
 }
 
@@ -264,4 +267,16 @@ export interface StableRelease {
   nightlyTag: string | null;
   publishedAt: string | null;
   htmlUrl: string;
+}
+
+/** Un perfil guardado: un modelo con su configuración y sus banderas. */
+export interface Deployment {
+  id: string;
+  name: string;
+  modelPath: string | null;
+  mmprojPath: string | null;
+  draftPath: string | null;
+  server: ServerConfig;
+  notes: string;
+  createdAt: number;
 }
