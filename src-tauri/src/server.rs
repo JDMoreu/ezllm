@@ -76,9 +76,10 @@ pub fn start(
     // error claro ("--jinja no lleva valor") que un "invalid argument" de
     // llama.cpp con el servidor a medias.
     if let Err(e) = crate::config::validate_extra_args(&cfg.extra_args) {
-        return Err(format!("Error en los argumentos adicionales: {e}"));
+        return Err(format!("Error en los argumentos: {e}"));
     }
 
+    let (host, port) = crate::config::effective_host_port(cfg);
     let flags = crate::config::config_to_flags(cfg, model_path, mmproj, draft_model);
 
     let logs_dir = crate::config::logs_dir();
@@ -115,8 +116,8 @@ pub fn start(
         *guard = Some(Running {
             child,
             pid,
-            port: cfg.port,
-            host: cfg.host.clone(),
+            port,
+            host: host.clone(),
             log_file: log_file.clone(),
             started_at: now_secs(),
             command: full_cmd.clone(),
@@ -132,18 +133,16 @@ pub fn start(
                 if let Ok(Some(_)) = r.child.try_wait() {
                     let tail = tail_log(&log_file, 15);
                     *guard = None;
-                    return Err(format!(
-                        "El servidor se detuvo al arrancar.\n{tail}"
-                    ));
+                    return Err(format!("El servidor se detuvo al arrancar.\n{tail}"));
                 }
             }
         }
-        if health_check(&cfg.host, cfg.port) {
+        if health_check(crate::config::probe_host(&host), port) {
             return Ok(ServerStatus {
                 running: true,
                 pid: Some(pid),
-                port: cfg.port,
-                host: cfg.host.clone(),
+                port,
+                host: host.clone(),
                 log_file: Some(log_file.to_string_lossy().into_owned()),
                 started_at: Some(now_secs()),
                 command: Some(full_cmd),
@@ -158,16 +157,14 @@ pub fn start(
     Ok(ServerStatus {
         running: true,
         pid: Some(pid),
-        port: cfg.port,
-        host: cfg.host.clone(),
+        port,
+        host,
         log_file: Some(log_file.to_string_lossy().into_owned()),
         started_at: Some(now_secs()),
         command: Some(full_cmd),
         health: false,
         models: Vec::new(),
-        error: Some(
-            "El servidor aún no responde; puede estar cargando el modelo.".to_string(),
-        ),
+        error: Some("El servidor aún no responde; puede estar cargando el modelo.".to_string()),
     })
 }
 
@@ -249,8 +246,12 @@ pub fn status() -> ServerStatus {
         log_file: Some(r.log_file.to_string_lossy().into_owned()),
         started_at: Some(r.started_at),
         command: Some(r.command.clone()),
-        health: alive && health_check(&r.host, r.port),
-        models: if alive { list_models(&r.host, r.port) } else { Vec::new() },
+        health: alive && health_check(crate::config::probe_host(&r.host), r.port),
+        models: if alive {
+            list_models(crate::config::probe_host(&r.host), r.port)
+        } else {
+            Vec::new()
+        },
         error: None,
     }
 }
@@ -262,7 +263,11 @@ pub fn health_check(host: &str, port: u16) -> bool {
         .timeout(std::time::Duration::from_secs(3))
         .build();
     match client {
-        Ok(c) => c.get(&url).send().map(|r| r.status().is_success()).unwrap_or(false),
+        Ok(c) => c
+            .get(&url)
+            .send()
+            .map(|r| r.status().is_success())
+            .unwrap_or(false),
         Err(_) => false,
     }
 }

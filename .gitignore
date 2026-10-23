@@ -3,3 +3,7 @@ dist/
 src-tauri/target/
 *.log
 .DS_Store
+.impeccable/
+.env
+.env.*
+!.env.example

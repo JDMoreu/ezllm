@@ -9,7 +9,7 @@ use crate::releases::{classify_release, list_releases, recommend_asset};
 /// release más reciente, y devuelve un informe legible.
 pub async fn install_latest_vulkan(install_dir: &Path) -> String {
     let client = reqwest::Client::builder()
-        .user_agent("EzLlamaCpp")
+        .user_agent("EzLLM")
         .timeout(std::time::Duration::from_secs(600))
         .build()
         .expect("cliente HTTP");

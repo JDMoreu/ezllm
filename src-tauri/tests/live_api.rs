@@ -1,7 +1,7 @@
 //! Verificación en vivo contra la API real de GitHub.
 //! Se ejecuta con `cargo test --test live_api -- --ignored --nocapture`.
 
-use ezllamacpp_lib::live_check;
+use ezllm_lib::live_check;
 
 #[test]
 #[ignore = "accede a la red"]

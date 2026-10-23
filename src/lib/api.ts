@@ -3,10 +3,15 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import type {
   AppConfig,
+  ArgHelp,
   Bootstrap,
   CatalogView,
   DownloadProgress,
   HardwareReport,
+  HfDownloadProgress,
+  HfDownloadResult,
+  HfModelDetail,
+  HfModelSummary,
   InstalledBuild,
   InstallResult,
   MemoryEstimate,
@@ -26,6 +31,7 @@ export const api = {
   setConfig: (config: AppConfig) => invoke<AppConfig>("set_config", { config }),
   defaultModelsDir: () => invoke<string>("default_models_dir"),
   defaultLlamaDir: () => invoke<string>("default_llama_dir"),
+  configPath: () => invoke<string>("config_path"),
   bootstrap: () => invoke<Bootstrap>("bootstrap"),
 
   // --- Releases ----------------------------------------------------------
@@ -47,6 +53,18 @@ export const api = {
   inspectModel: (path: string) => invoke<ModelInfo>("inspect_model", { path }),
   findCompanions: (modelPath: string, dir: string) =>
     invoke<[string | null, string | null]>("find_companions", { modelPath, dir }),
+
+  // --- Catálogo de argumentos --------------------------------------------
+  serverHelp: () => invoke<ArgHelp>("server_help"),
+
+  // --- Hugging Face -------------------------------------------------------
+  hfSearch: (query: string, sort = "downloads", limit = 24) =>
+    invoke<HfModelSummary[]>("hf_search", { query, sort, limit }),
+  hfPopular: (sort = "downloads", limit = 12) =>
+    invoke<HfModelSummary[]>("hf_popular", { sort, limit }),
+  hfModel: (repo: string) => invoke<HfModelDetail>("hf_model", { repo }),
+  hfDownload: (repo: string, paths: string[]) =>
+    invoke<HfDownloadResult>("hf_download", { repo, paths }),
 
   // --- Memoria -----------------------------------------------------------
   estimateMemory: (
@@ -93,6 +111,10 @@ export const api = {
     invoke<[AppConfig, Deployment]>("apply_deployment", { id }),
   duplicateDeployment: (id: string, newName: string) =>
     invoke<Deployment>("duplicate_deployment", { id, newName }),
+  readDeploymentFile: (path: string) =>
+    invoke<Deployment>("read_deployment_file", { path }),
+  writeDeploymentFile: (path: string, deployment: Deployment) =>
+    invoke<string>("write_deployment_file", { path, deployment }),
 
   // --- Telemetría ----------------------------------------------------------
   telemetrySnapshot: () => invoke<Telemetry>("telemetry_snapshot"),
@@ -110,6 +132,18 @@ export function onInstallProgress(
   handler: (p: DownloadProgress) => void,
 ): () => void {
   const unlisten = listen<DownloadProgress>("install-progress", (e) => handler(e.payload));
+  return () => {
+    unlisten.then((fn) => fn()).catch(() => {});
+  };
+}
+
+/** Evento de progreso de una descarga de Hugging Face. */
+export function onHfDownloadProgress(
+  handler: (p: HfDownloadProgress) => void,
+): () => void {
+  const unlisten = listen<HfDownloadProgress>("hf-download-progress", (e) =>
+    handler(e.payload),
+  );
   return () => {
     unlisten.then((fn) => fn()).catch(() => {});
   };

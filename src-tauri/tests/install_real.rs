@@ -6,7 +6,7 @@
 
 use std::path::PathBuf;
 
-use ezllamacpp_lib::install_probe;
+use ezllm_lib::install_probe;
 
 #[tokio::test]
 #[ignore = "descarga ~35 MB de la red"]

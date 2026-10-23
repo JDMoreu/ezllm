@@ -51,7 +51,7 @@ pub struct GitHubRelease {
 pub fn github_headers(token: Option<&str>) -> Vec<(&'static str, String)> {
     let mut h = vec![
         ("Accept", "application/vnd.github+json".to_string()),
-        ("User-Agent", "EzLlamaCpp".to_string()),
+        ("User-Agent", "EzLLM".to_string()),
         ("X-GitHub-Api-Version", "2022-11-28".to_string()),
     ];
     if let Some(t) = token {

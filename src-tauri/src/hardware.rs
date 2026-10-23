@@ -42,6 +42,7 @@ pub struct RamInfo {
     pub available_bytes: u64,
     pub total_gb: f64,
     pub available_gb: f64,
+    pub speed_mhz: Option<u32>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -412,6 +413,7 @@ pub fn detect_ram() -> RamInfo {
                     available_bytes: status.ullAvailPhys,
                     total_gb: status.ullTotalPhys as f64 / 1024.0 / 1024.0 / 1024.0,
                     available_gb: status.ullAvailPhys as f64 / 1024.0 / 1024.0 / 1024.0,
+                    speed_mhz: ram_speed_mhz(),
                 };
             }
         }
@@ -433,9 +435,10 @@ pub fn detect_ram() -> RamInfo {
                 let available_bytes = avail.unwrap_or(0) * 1024;
                 return RamInfo {
                     total_bytes,
-                    available_bytes,
+                    available_bytes: avail.unwrap_or(0),
                     total_gb: total_bytes as f64 / 1024.0 / 1024.0 / 1024.0,
-                    available_gb: available_bytes as f64 / 1024.0 / 1024.0 / 1024.0,
+                    available_gb: avail.unwrap_or(0) as f64 / 1024.0 / 1024.0 / 1024.0,
+                    speed_mhz: ram_speed_mhz(),
                 };
             }
         }
@@ -446,7 +449,31 @@ pub fn detect_ram() -> RamInfo {
         available_bytes: 0,
         total_gb: 0.0,
         available_gb: 0.0,
+        speed_mhz: None,
     }
+}
+
+#[cfg(windows)]
+fn ram_speed_mhz() -> Option<u32> {
+    static SPEED: std::sync::OnceLock<Option<u32>> = std::sync::OnceLock::new();
+    *SPEED.get_or_init(|| {
+        let out = run(
+            "powershell",
+            &[
+                "-NoProfile",
+                "-NonInteractive",
+                "-Command",
+                "$m=Get-CimInstance Win32_PhysicalMemory; $s=($m|Measure-Object -Property Speed -Maximum).Maximum; if(-not $s){$s=($m|Measure-Object -Property ConfiguredClockSpeed -Maximum).Maximum}; if($s){$s}",
+            ],
+            Duration::from_secs(10),
+        );
+        out.trim().parse().ok()
+    })
+}
+
+#[cfg(not(windows))]
+fn ram_speed_mhz() -> Option<u32> {
+    None
 }
 
 /// Qué aceleradores están disponibles en el equipo.

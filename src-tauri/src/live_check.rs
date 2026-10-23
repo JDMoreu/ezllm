@@ -9,7 +9,7 @@ use crate::releases::{classify_release, recommend_asset, GitHubRelease};
 /// Descarga la release más reciente y devuelve qué asset se recomendaría.
 pub fn recommend_for_host(host_os: &str, host_arch: &str) -> String {
     let client = reqwest::blocking::Client::builder()
-        .user_agent("EzLlamaCpp")
+        .user_agent("EzLLM")
         .timeout(Duration::from_secs(60))
         .build()
         .expect("cliente HTTP");

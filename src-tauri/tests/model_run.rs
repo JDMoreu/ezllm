@@ -5,7 +5,7 @@
 
 use std::path::PathBuf;
 
-use ezllamacpp_lib::server_probe;
+use ezllm_lib::server_probe;
 
 #[test]
 #[ignore = "arranca un llama-server real con modelo"]

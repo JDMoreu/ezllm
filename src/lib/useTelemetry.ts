@@ -33,7 +33,7 @@ export class Ring {
 
   /** Últimas muestras, de la más antigua a la más reciente. */
   values(): Sample[] {
-    return this.items;
+    return [...this.items];
   }
 
   /** El valor más reciente, o `null` si no hay muestras. */

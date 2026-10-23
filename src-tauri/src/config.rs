@@ -69,6 +69,11 @@ pub struct ServerConfig {
     /// comando, después de todo lo que genera la app.
     #[serde(default)]
     pub extra_args: String,
+    /// Si es `true`, el comando se compone solo con los flags escritos a
+    /// mano más el modelo y el endpoint. Los campos estructurados quedan
+    /// como legado y no se emiten.
+    #[serde(default)]
+    pub raw_mode: bool,
 }
 
 impl Default for ServerConfig {
@@ -94,6 +99,7 @@ impl Default for ServerConfig {
             fit: None,
             alias: None,
             extra_args: "".to_string(),
+            raw_mode: false,
         }
     }
 }
@@ -155,7 +161,10 @@ impl Default for AppConfig {
             last_model: None,
             last_mmproj: None,
             last_draft_model: None,
-            server: ServerConfig::default(),
+            server: ServerConfig {
+                raw_mode: true,
+                ..ServerConfig::default()
+            },
             deployments: Vec::new(),
             active_deployment_id: None,
             language: "es".to_string(),
@@ -163,18 +172,70 @@ impl Default for AppConfig {
     }
 }
 
-/// Carpeta de datos de la app.
+/// Carpeta de datos de la app (configuración y logs).
 pub fn app_data_dir() -> PathBuf {
     if let Some(d) = dirs::data_dir() {
-        d.join("EzLlamaCpp")
+        d.join("EzLLM")
     } else {
         PathBuf::from(".")
     }
 }
 
+/// Carpeta de datos de instalaciones anteriores. Solo se usa para migrar.
+fn legacy_app_data_dir() -> Option<PathBuf> {
+    dirs::data_dir().map(|d| d.join("EzLlamaCpp"))
+}
+
+/// Raíz visible para modelos y binarios: Documentos/EzLLM.
+fn documents_app_dir() -> PathBuf {
+    dirs::document_dir()
+        .or_else(dirs::data_dir)
+        .unwrap_or_else(|| PathBuf::from("."))
+        .join("EzLLM")
+}
+
 /// Ruta del fichero de configuración.
 pub fn config_path() -> PathBuf {
     app_data_dir().join("config.json")
+}
+
+/// Recupera la configuración de la versión anterior cuando la carpeta cambió
+/// de nombre. Si la configuración nueva ya tiene datos propios, no se toca.
+fn migrate_legacy_config(path: &std::path::Path) {
+    let Some(legacy) = legacy_app_data_dir().map(|dir| dir.join("config.json")) else {
+        return;
+    };
+    if !legacy.exists() {
+        return;
+    }
+
+    let copy = match (
+        std::fs::read_to_string(path).ok(),
+        std::fs::read_to_string(&legacy).ok(),
+    ) {
+        (None, _) => true,
+        (Some(new_text), Some(old_text)) => {
+            match (
+                serde_json::from_str::<AppConfig>(&new_text),
+                serde_json::from_str::<AppConfig>(&old_text),
+            ) {
+                (Ok(new_cfg), Ok(old_cfg)) => {
+                    new_cfg.last_model.is_none()
+                        && new_cfg.deployments.is_empty()
+                        && (old_cfg.last_model.is_some() || !old_cfg.deployments.is_empty())
+                }
+                (Err(_), _) => true,
+                _ => false,
+            }
+        }
+        _ => false,
+    };
+
+    if copy {
+        if let Err(e) = std::fs::copy(&legacy, path) {
+            log::warn!("no se pudo migrar {}: {e}", legacy.display());
+        }
+    }
 }
 
 /// Carga la configuración; si no existe, devuelve los valores por defecto.
@@ -187,9 +248,22 @@ pub fn load() -> AppConfig {
         log::warn!("no se pudo crear {}: {e}", dir.display());
     }
 
+    let root = documents_app_dir();
+    let _ = std::fs::create_dir_all(root.join("models"));
+    let _ = std::fs::create_dir_all(root.join("llama.cpp"));
+
     let path = config_path();
+    migrate_legacy_config(&path);
     let Ok(text) = std::fs::read_to_string(&path) else {
-        let cfg = AppConfig::default();
+        let mut cfg = AppConfig::default();
+        cfg.models_dir = Some(default_models_dir().to_string_lossy().into_owned());
+        cfg.llama_dir = Some(llama_dir().to_string_lossy().into_owned());
+        if let Some(dir) = cfg.models_dir.as_deref() {
+            let _ = std::fs::create_dir_all(dir);
+        }
+        if let Some(dir) = cfg.llama_dir.as_deref() {
+            let _ = std::fs::create_dir_all(dir);
+        }
         // Se persiste la config por defecto para que el usuario vea dónde
         // se guarda y pueda editarla.
         if let Err(e) = save(&cfg) {
@@ -213,10 +287,14 @@ pub fn load() -> AppConfig {
     // Las rutas por defecto se rellenan siempre: el usuario no deberia tener
     // que buscarlas cada vez que abre la app.
     if cfg.models_dir.as_deref().unwrap_or("").is_empty() {
-        cfg.models_dir = Some(default_models_dir().to_string_lossy().into_owned());
+        let dir = default_models_dir();
+        let _ = std::fs::create_dir_all(&dir);
+        cfg.models_dir = Some(dir.to_string_lossy().into_owned());
     }
     if cfg.llama_dir.as_deref().unwrap_or("").is_empty() {
-        cfg.llama_dir = Some(llama_dir().to_string_lossy().into_owned());
+        let dir = llama_dir();
+        let _ = std::fs::create_dir_all(&dir);
+        cfg.llama_dir = Some(dir.to_string_lossy().into_owned());
     }
 
     // Si el despliegue guardado no tiene modelo, se deja vacio a proposito:
@@ -239,6 +317,15 @@ pub fn load() -> AppConfig {
                     .map(|s| s.to_string());
             }
         }
+    }
+
+    // Los perfiles antiguos se recuperan antes de convertir a argumentos:
+    // si no, sus configuraciones se quedarian con el modo estructurado.
+    let mut migrated = migrate_to_raw(&mut cfg.server);
+    for deployment in cfg.deployments.iter_mut() {
+        migrated |= migrate_to_raw(&mut deployment.server);
+    }
+    if migrated || needs_migration {
         if let Err(e) = save(&cfg) {
             log::warn!("no se pudo guardar la config migrada: {e}");
         }
@@ -260,25 +347,174 @@ pub fn save(cfg: &AppConfig) -> Result<PathBuf, String> {
 
 /// Ruta donde se guardan los binarios de llama.cpp.
 pub fn llama_dir() -> PathBuf {
-    if let Some(d) = dirs::data_dir() {
-        d.join("EzLlamaCpp").join("llama.cpp")
-    } else {
-        PathBuf::from("llama.cpp")
-    }
+    documents_app_dir().join("llama.cpp")
 }
 
 /// Ruta por defecto de los modelos.
 pub fn default_models_dir() -> PathBuf {
-    if let Some(d) = dirs::data_dir() {
-        d.join("EzLlamaCpp").join("models")
-    } else {
-        PathBuf::from("models")
-    }
+    documents_app_dir().join("models")
 }
 
 /// Ruta de los logs de llama-server.
 pub fn logs_dir() -> PathBuf {
     app_data_dir().join("logs")
+}
+
+fn arg_value(args: &[String], names: &[&str]) -> Option<String> {
+    for (i, arg) in args.iter().enumerate() {
+        for name in names {
+            if arg == name {
+                return args.get(i + 1).cloned();
+            }
+            if let Some(value) = arg.strip_prefix(&format!("{name}=")) {
+                if !value.is_empty() {
+                    return Some(value.to_string());
+                }
+            }
+        }
+    }
+    None
+}
+
+fn flag_present(args: &[String], names: &[&str]) -> bool {
+    args.iter().any(|arg| {
+        names
+            .iter()
+            .any(|name| arg == name || arg.starts_with(&format!("{name}=")))
+    })
+}
+
+/// Endpoint efectivo teniendo en cuenta `--host` y `--port` escritos a mano.
+pub fn effective_host_port(cfg: &ServerConfig) -> (String, u16) {
+    let args = parse_extra_args(&cfg.extra_args);
+    let host = arg_value(&args, &["--host"]).unwrap_or_else(|| cfg.host.clone());
+    let port = arg_value(&args, &["--port"])
+        .and_then(|value| value.parse::<u16>().ok())
+        .unwrap_or(cfg.port);
+    (host, port)
+}
+
+/// Host que se usa para sondear `/health`, incluso si el servidor escucha en
+/// todas las interfaces.
+pub fn probe_host(host: &str) -> &str {
+    match host {
+        "0.0.0.0" | "::" | "[::]" => "127.0.0.1",
+        other => other,
+    }
+}
+
+/// Convierte una configuración estructurada en su lista de argumentos.
+fn structured_to_args(cfg: &ServerConfig) -> Vec<String> {
+    let base = ServerConfig::default();
+    let mut args: Vec<String> = Vec::new();
+    let mut push = |name: &str, value: String| {
+        args.push(name.to_string());
+        args.push(value);
+    };
+
+    if cfg.ctx_size != base.ctx_size {
+        push("-c", cfg.ctx_size.to_string());
+    }
+    if cfg.batch_size != base.batch_size {
+        push("-b", cfg.batch_size.to_string());
+    }
+    if cfg.ubatch_size != base.ubatch_size {
+        push("-ub", cfg.ubatch_size.to_string());
+    }
+    if cfg.n_parallel != base.n_parallel {
+        push("-np", cfg.n_parallel.to_string());
+    }
+    if cfg.n_gpu_layers != base.n_gpu_layers {
+        if let Some(value) = cfg.n_gpu_layers {
+            push("-ngl", value.to_string());
+        }
+    }
+    if cfg.threads != base.threads {
+        if let Some(value) = cfg.threads {
+            push("-t", value.to_string());
+        }
+    }
+    if cfg.threads_batch != base.threads_batch {
+        if let Some(value) = cfg.threads_batch {
+            push("-tb", value.to_string());
+        }
+    }
+    if cfg.flash_attn != base.flash_attn && matches!(cfg.flash_attn.as_str(), "on" | "off") {
+        push("-fa", cfg.flash_attn.clone());
+    }
+    if cfg.cache_type_k != base.cache_type_k {
+        push("--cache-type-k", cfg.cache_type_k.clone());
+    }
+    if cfg.cache_type_v != base.cache_type_v {
+        push("--cache-type-v", cfg.cache_type_v.clone());
+    }
+    if let Some(device) = cfg.device.as_ref().filter(|value| !value.trim().is_empty()) {
+        push("--device", device.clone());
+    }
+    if cfg.split_mode != base.split_mode {
+        push("--split-mode", cfg.split_mode.clone());
+    }
+    if cfg.multi_gpu {
+        if let Some(split) = cfg
+            .tensor_split
+            .as_ref()
+            .filter(|value| !value.trim().is_empty())
+        {
+            push("--tensor-split", split.clone());
+        }
+    }
+    if !cfg.load_mode.is_empty() {
+        push("--load-mode", cfg.load_mode.clone());
+    }
+    if matches!(cfg.fit.as_deref(), Some("on") | Some("off")) {
+        push("--fit", cfg.fit.clone().unwrap());
+    }
+    if let Some(alias) = cfg.alias.as_ref().filter(|value| !value.trim().is_empty()) {
+        push("--alias", alias.clone());
+    }
+    if cfg.host != base.host {
+        push("--host", cfg.host.clone());
+    }
+    if cfg.port != base.port {
+        push("--port", cfg.port.to_string());
+    }
+    args
+}
+
+fn quote_arg(value: &str) -> String {
+    if value.is_empty() {
+        return "\"\"".to_string();
+    }
+    if value.chars().any(|c| c.is_whitespace() || c == '"') {
+        format!("\"{}\"", value.replace('"', "\\\""))
+    } else {
+        value.to_string()
+    }
+}
+
+/// Pasa una configuración estructurada a modo argumentos una sola vez.
+pub fn migrate_to_raw(cfg: &mut ServerConfig) -> bool {
+    if cfg.raw_mode {
+        return false;
+    }
+    let args = structured_to_args(cfg);
+    if !args.is_empty() {
+        let extra = cfg.extra_args.trim();
+        let joined = args
+            .iter()
+            .map(|arg| quote_arg(arg))
+            .collect::<Vec<_>>()
+            .join(" ");
+        // Los argumentos libres iban al final y podían pisar la config
+        // estructurada; al migrar conservan esa prioridad.
+        cfg.extra_args = if extra.is_empty() {
+            joined
+        } else {
+            format!("{joined} {extra}")
+        };
+    }
+    cfg.raw_mode = true;
+    true
 }
 
 /// Convierte la configuración en los flags reales de llama-server.
@@ -295,6 +531,39 @@ pub fn config_to_flags(
     draft_model: Option<&str>,
 ) -> Vec<String> {
     let mut flags: Vec<String> = Vec::new();
+
+    if cfg.raw_mode {
+        let extra = parse_extra_args(&cfg.extra_args);
+        if let Some(model) = model_path {
+            if !flag_present(&extra, &["-m", "--model"]) {
+                flags.push("-m".into());
+                flags.push(model.into());
+            }
+        }
+        if let Some(projector) = mmproj.filter(|value| !value.is_empty()) {
+            if !flag_present(&extra, &["--mmproj", "-mm"]) {
+                flags.push("--mmproj".into());
+                flags.push(projector.into());
+            }
+        }
+        if let Some(draft) = draft_model.filter(|value| !value.is_empty()) {
+            if !flag_present(&extra, &["--spec-draft-model", "-md"]) {
+                flags.push("--spec-draft-model".into());
+                flags.push(draft.into());
+            }
+        }
+        if !flag_present(&extra, &["--host"]) {
+            flags.push("--host".into());
+            flags.push(cfg.host.clone());
+        }
+        if !flag_present(&extra, &["--port"]) {
+            flags.push("--port".into());
+            flags.push(cfg.port.to_string());
+        }
+        flags.extend(extra);
+        return flags;
+    }
+
     if let Some(m) = model_path {
         flags.push("-m".into());
         flags.push(m.into());
@@ -426,19 +695,14 @@ const BOOLEAN_FLAGS: &[&str] = &[
 ///   - que ningun flag booleano lleve un valor pegado (el error clasico);
 ///   - que los flags que exigen valor lo traigan.
 pub fn validate_extra_args(input: &str) -> Result<(), String> {
-    let args = parse_extra_args(input);
+    let args = parse_extra_args_quoted(input);
     let mut i = 0;
     while i < args.len() {
-        let arg = &args[i];
+        let (arg, _) = &args[i];
         if BOOLEAN_FLAGS.contains(&arg.as_str()) {
-            // Un booleano no puede ir seguido de un valor. Ese valor puede
-            // empezar por guion (`-cnv`), asi que la regla no puede ser "no
-            // empieza por guion": se mira si el siguiente es un flag largo
-            // conocido. Si lo es, es el valor colgado del booleano.
-            if i + 1 < args.len() {
-                let next = args[i + 1].clone();
-                let next_is_flag = next.starts_with("--") || next == "-h";
-                if !next_is_flag {
+            if let Some((next, quoted)) = args.get(i + 1) {
+                let looks_like_flag = next.starts_with('-');
+                if !looks_like_flag || (*quoted && looks_like_flag) {
                     return Err(format!(
                         "`{arg}` no lleva valor: escribe solo `{arg}`, o quitalo. \
                          (El valor que le sigue, `{next}`, es lo que hace fallar el arranque.)"
@@ -459,25 +723,37 @@ pub fn validate_extra_args(input: &str) -> Result<(), String> {
 /// ```
 ///
 /// Las comillas dobles y simples se respetan; el resto se separa por
-/// espacios. Un `\` escapa el siguiente carácter.
+/// espacios. Dentro de comillas, `\` solo escapa la comilla activa, para
+/// no romper rutas de Windows.
 pub fn parse_extra_args(input: &str) -> Vec<String> {
+    parse_extra_args_quoted(input)
+        .into_iter()
+        .map(|(value, _)| value)
+        .collect()
+}
+
+fn parse_extra_args_quoted(input: &str) -> Vec<(String, bool)> {
     let mut out = Vec::new();
     let mut current = String::new();
     let mut quote: Option<char> = None;
     let mut has_content = false;
+    let mut quoted = false;
+    let mut chars = input.chars().peekable();
 
-    for ch in input.chars() {
+    while let Some(ch) = chars.next() {
         match quote {
             Some(q) => {
                 if ch == q {
                     quote = None;
                 } else if ch == '\\' {
-                    // Escape: el siguiente caracter va literal.
-                    quote = Some(q);
-                    // Se marca con un sentinel para no perderlo.
-                    current.push('\\');
-                    current.push(ch);
-                    continue;
+                    // En Windows las barras son literales: `"C:\Models"` y
+                    // `"\\server\share"` conservan sus separadores. Solo
+                    // `\"` escapa la comilla activa.
+                    if matches!(chars.peek(), Some(next) if *next == q) {
+                        current.push(chars.next().unwrap());
+                    } else {
+                        current.push(ch);
+                    }
                 } else {
                     current.push(ch);
                 }
@@ -486,10 +762,12 @@ pub fn parse_extra_args(input: &str) -> Vec<String> {
                 if ch == '"' || ch == '\'' {
                     quote = Some(ch);
                     has_content = true;
+                    quoted = true;
                 } else if ch.is_whitespace() {
                     if has_content {
-                        out.push(std::mem::take(&mut current));
+                        out.push((std::mem::take(&mut current), quoted));
                         has_content = false;
+                        quoted = false;
                     }
                 } else {
                     current.push(ch);
@@ -499,13 +777,9 @@ pub fn parse_extra_args(input: &str) -> Vec<String> {
         }
     }
     if has_content {
-        out.push(current);
+        out.push((current, quoted));
     }
-
-    // Limpia los escapes: \\x -> x
-    out.into_iter()
-        .map(|a| a.replace("\\", ""))
-        .collect()
+    out
 }
 
 /// Contexto que se ofrece en el desplegable: pasos habituales hasta el máximo.
@@ -547,12 +821,20 @@ mod tests {
     fn parallel_only_emitted_above_one() {
         let mut cfg = ServerConfig::default();
         cfg.n_parallel = 1;
-        assert!(!config_to_flags(&cfg, None, None, None).iter().any(|f| f == "-np"));
+        assert!(
+            !config_to_flags(&cfg, None, None, None)
+                .iter()
+                .any(|f| f == "-np")
+        );
         cfg.n_parallel = 4;
-        assert!(config_to_flags(&cfg, None, None, None).iter().any(|f| f == "-np"));
+        assert!(
+            config_to_flags(&cfg, None, None, None)
+                .iter()
+                .any(|f| f == "-np")
+        );
     }
 
-#[test]
+    #[test]
     fn multi_gpu_emits_device_and_tensor_split() {
         let mut cfg = ServerConfig::default();
         cfg.device = Some("Vulkan0,Vulkan1".into());
@@ -581,7 +863,7 @@ mod tests {
         let flags = config_to_flags(&cfg, None, None, None);
         assert!(!flags.iter().any(|f| f == "--tensor-split"));
     }
-#[test]
+    #[test]
     fn legacy_profiles_are_migrated_to_deployments() {
         // Una configuracion escrita por la version anterior usaba "profiles".
         let legacy = r#"{
@@ -655,6 +937,22 @@ mod tests {
     }
 
     #[test]
+    fn extra_args_keep_windows_paths_inside_quotes() {
+        assert_eq!(
+            parse_extra_args(r#"--lora "C:\Models\my lora.gguf""#),
+            vec!["--lora", r"C:\Models\my lora.gguf"]
+        );
+        assert_eq!(
+            parse_extra_args(r#"--lora "\\server\share\my lora.gguf""#),
+            vec!["--lora", r"\\server\share\my lora.gguf"]
+        );
+        assert_eq!(
+            parse_extra_args(r#"--alias "my \"model\"""#),
+            vec!["--alias", r#"my "model""#]
+        );
+    }
+
+    #[test]
     fn extra_args_keep_quoted_values_together() {
         assert_eq!(
             parse_extra_args("--jinja \"--template chatml\" -np 2"),
@@ -696,5 +994,106 @@ mod tests {
         // Los flags libres van al final, en el orden escrito.
         assert_eq!(flags[flags.len() - 2], "--ctx-size");
         assert_eq!(flags.last().unwrap(), "999");
+    }
+
+    #[test]
+    fn raw_mode_emits_only_essentials_and_user_args() {
+        let mut cfg = ServerConfig::default();
+        cfg.raw_mode = true;
+        cfg.extra_args = "-c 32768 --jinja".into();
+        let flags = config_to_flags(&cfg, Some("model.gguf"), None, None);
+        assert_eq!(
+            flags,
+            vec![
+                "-m",
+                "model.gguf",
+                "--host",
+                "127.0.0.1",
+                "--port",
+                "9931",
+                "-c",
+                "32768",
+                "--jinja",
+            ]
+        );
+    }
+
+    #[test]
+    fn raw_mode_does_not_duplicate_user_flags() {
+        let mut cfg = ServerConfig::default();
+        cfg.raw_mode = true;
+        cfg.extra_args = "-m custom.gguf --port 8080".into();
+        let flags = config_to_flags(&cfg, Some("selected.gguf"), None, None);
+        assert_eq!(flags.iter().filter(|f| *f == "-m").count(), 1);
+        assert_eq!(flags.iter().filter(|f| *f == "--port").count(), 1);
+        assert!(flags.contains(&"custom.gguf".to_string()));
+        assert!(!flags.contains(&"selected.gguf".to_string()));
+    }
+
+    #[test]
+    fn migration_turns_structured_config_into_args() {
+        let mut cfg = ServerConfig::default();
+        cfg.ctx_size = 32768;
+        cfg.n_gpu_layers = Some(99);
+        cfg.flash_attn = "on".into();
+        assert!(migrate_to_raw(&mut cfg));
+        assert!(cfg.raw_mode);
+        assert!(!cfg.extra_args.contains("-c 8192"));
+        assert!(cfg.extra_args.contains("-c 32768"));
+        assert!(cfg.extra_args.contains("-ngl 99"));
+        assert!(cfg.extra_args.contains("-fa on"));
+
+        let flags = config_to_flags(&cfg, Some("model.gguf"), None, None);
+        assert_eq!(flags[0], "-m");
+        assert!(flags.contains(&"-c".to_string()));
+        assert!(flags.contains(&"32768".to_string()));
+    }
+
+    #[test]
+    fn migration_quotes_values_with_spaces() {
+        let mut cfg = ServerConfig::default();
+        cfg.alias = Some("Mi modelo local".into());
+        assert!(migrate_to_raw(&mut cfg));
+        assert!(cfg.extra_args.contains("\"Mi modelo local\""));
+        assert_eq!(
+            parse_extra_args(&cfg.extra_args),
+            vec!["--alias", "Mi modelo local"]
+        );
+    }
+
+    #[test]
+    fn migration_keeps_hand_written_args_last() {
+        let mut cfg = ServerConfig::default();
+        cfg.ctx_size = 32768;
+        cfg.extra_args = "-c 9999".into();
+        assert!(migrate_to_raw(&mut cfg));
+
+        let flags = config_to_flags(&cfg, None, None, None);
+        let context = flags.iter().position(|flag| flag == "-c").unwrap();
+        assert_eq!(flags[context + 1], "32768");
+        assert_eq!(flags.last().unwrap(), "9999");
+    }
+
+    #[test]
+    fn effective_endpoint_reads_hand_written_flags() {
+        let mut cfg = ServerConfig::default();
+        cfg.extra_args = "--host 0.0.0.0 --port 8080".into();
+        assert_eq!(effective_host_port(&cfg), ("0.0.0.0".to_string(), 8080));
+        assert_eq!(probe_host("0.0.0.0"), "127.0.0.1");
+        assert_eq!(probe_host("127.0.0.1"), "127.0.0.1");
+    }
+
+    #[test]
+    fn effective_endpoint_accepts_equals_form() {
+        let mut cfg = ServerConfig::default();
+        cfg.extra_args = "--host=0.0.0.0 --port=9090".into();
+        assert_eq!(effective_host_port(&cfg), ("0.0.0.0".to_string(), 9090));
+    }
+
+    #[test]
+    fn jinja_followed_by_an_unquoted_flag_is_valid() {
+        assert!(validate_extra_args("--jinja -cnv").is_ok());
+        assert!(validate_extra_args("--jinja -np 2").is_ok());
+        assert!(validate_extra_args("--jinja on").is_err());
     }
 }

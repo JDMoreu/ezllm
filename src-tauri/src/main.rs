@@ -2,5 +2,5 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 fn main() {
-    ezllamacpp_lib::run()
+    ezllm_lib::run()
 }

@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "EzLlamaCpp",
+  "productName": "EzLLM",
   "version": "0.1.0",
-  "identifier": "com.jdmoreu.ezllamacpp",
+  "identifier": "com.jdmoreu.ezllm",
   "build": {
     "beforeDevCommand": "npm run dev",
     "devUrl": "http://localhost:1420",
@@ -12,12 +12,13 @@
   "app": {
     "windows": [
       {
-        "title": "EzLlamaCpp",
+        "title": "EzLLM",
         "width": 1280,
         "height": 820,
         "minWidth": 960,
         "minHeight": 640,
         "resizable": true,
+        "decorations": false,
         "center": true,
         "theme": "Dark"
       }
@@ -30,7 +31,7 @@
     "active": true,
     "targets": ["msi", "nsis"],
     "shortDescription": "Cliente profesional de llama.cpp",
-    "longDescription": "EzLlamaCpp instala llama.cpp desde el repositorio oficial, gestiona los modelos GGUF (incluidos MTP y mmproj) y configura el servidor sin comandos.",
+    "longDescription": "EzLLM instala llama.cpp desde el repositorio oficial, gestiona los modelos GGUF (incluidos MTP y mmproj) y configura el servidor sin comandos.",
     "category": "DeveloperTool",
     "icon": [
       "icons/32x32.png",

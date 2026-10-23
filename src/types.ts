@@ -27,6 +27,8 @@ export interface ServerConfig {
   fit: string | null;
   alias: string | null;
   extraArgs: string;
+  /** El comando se compone con `extraArgs`; los campos anteriores son legado. */
+  rawMode: boolean;
 }
 
 /**
@@ -137,6 +139,7 @@ export interface RamInfo {
   availableBytes: number;
   totalGb: number;
   availableGb: number;
+  speedMhz: number | null;
 }
 
 export interface AcceleratorInfo {
@@ -304,4 +307,81 @@ export interface SlotsState {
   total: number;
   busy: number;
   nCtx: number;
+}
+
+/** Una opción del catálogo real de `llama-server --help`. */
+export interface ArgOption {
+  key: string;
+  canonical: string;
+  flags: string[];
+  valueHint: string | null;
+  defaultValue: string | null;
+  section: string;
+  description: string;
+}
+
+export interface ArgHelp {
+  source: string;
+  version: string | null;
+  options: ArgOption[];
+}
+
+/** Resultado de búsqueda de Hugging Face. */
+export interface HfModelSummary {
+  id: string;
+  author: string;
+  downloads: number;
+  likes: number;
+  pipelineTag: string | null;
+  tags: string[];
+  lastModified: string | null;
+  gated: boolean;
+}
+
+export interface HfFile {
+  path: string;
+  size: number;
+  sha256: string | null;
+}
+
+export interface HfQuant {
+  id: string;
+  label: string;
+  role: "primary" | "mmproj" | "draft";
+  quant: string;
+  size: number;
+  sharded: boolean;
+  incomplete: boolean;
+  files: HfFile[];
+}
+
+export interface HfGguf {
+  architecture: string | null;
+  contextLength: number | null;
+  totalSize: number | null;
+}
+
+export interface HfModelDetail {
+  id: string;
+  author: string;
+  downloads: number;
+  likes: number;
+  pipelineTag: string | null;
+  tags: string[];
+  lastModified: string | null;
+  gated: boolean;
+  gguf: HfGguf;
+  quants: HfQuant[];
+}
+
+export interface HfDownloadProgress extends DownloadProgress {
+  repo: string;
+  file: string;
+  fileIndex: number;
+  fileCount: number;
+}
+
+export interface HfDownloadResult {
+  files: string[];
+  modelPath: string | null;
 }

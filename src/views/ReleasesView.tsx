@@ -1,11 +1,12 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import clsx from "clsx";
 import {
-  AlertTriangle,
+  Check,
   CheckCircle2,
   Cpu,
   Download,
   ExternalLink,
+  FolderOpen,
   HardDrive,
   Info,
   RefreshCw,
@@ -26,49 +27,63 @@ import {
 } from "../components/ui";
 import {
   backendLabel,
+  dirname,
   formatBytes,
   formatDate,
   formatSpeed,
 } from "../lib/format";
+import { t } from "../lib/i18n";
 import type {
-  AppConfig,
   BinaryAsset,
   DownloadProgress,
-  HardwareReport,
   InstalledBuild,
   ReleaseView,
   StableRelease,
 } from "../types";
 
 export default function ReleasesView({
-  config,
-  hardware,
-  onConfigChange,
+  onInstalledChange,
+  onPickLlamaFolder,
+  onUseBuild,
+  serverRunning = false,
+  embedded = false,
 }: {
-  config: AppConfig | null;
-  hardware: HardwareReport | null;
-  onConfigChange: (c: AppConfig) => void;
+  onInstalledChange?: () => void;
+  onPickLlamaFolder?: () => Promise<boolean>;
+  onUseBuild?: (build: InstalledBuild) => void;
+  serverRunning?: boolean;
+  embedded?: boolean;
 }) {
   const toast = useToast();
   const [releases, setReleases] = useState<ReleaseView[]>([]);
   const [installed, setInstalled] = useState<InstalledBuild[]>([]);
+  const [activeServer, setActiveServer] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [expanded, setExpanded] = useState<string | null>(null);
   const [progress, setProgress] = useState<DownloadProgress | null>(null);
   const [installing, setInstalling] = useState<string | null>(null);
+  const [switching, setSwitching] = useState<string | null>(null);
   const [pendingDelete, setPendingDelete] = useState<string | null>(null);
   const [channel, setChannel] = useState<"nightly" | "stable">("nightly");
   const [stable, setStable] = useState<StableRelease[]>([]);
   const [loadingStable, setLoadingStable] = useState(false);
+  const [showAll, setShowAll] = useState(false);
+  const [showAllStable, setShowAllStable] = useState(false);
+  const [showAllAssets, setShowAllAssets] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
-      const [rels, inst] = await Promise.all([api.listReleases(12), api.listInstalled()]);
+      const [rels, inst, serverPath] = await Promise.all([
+        api.listReleases(12),
+        api.listInstalled(),
+        api.llamaServerPath().catch(() => null),
+      ]);
       setReleases(rels);
       setInstalled(inst);
+      setActiveServer(serverPath);
       // Abre la primera release para que el usuario vea las opciones sin clic.
       setExpanded((prev) => prev ?? rels[0]?.tag ?? null);
     } catch (e) {
@@ -107,6 +122,15 @@ export default function ReleasesView({
 
   useEffect(() => onInstallProgress(setProgress), []);
 
+  const refreshInstalled = useCallback(async () => {
+    const [inst, serverPath] = await Promise.all([
+      api.listInstalled(),
+      api.llamaServerPath().catch(() => null),
+    ]);
+    setInstalled(inst);
+    setActiveServer(serverPath);
+  }, []);
+
   const install = useCallback(
     async (tag: string, asset: BinaryAsset) => {
       setInstalling(asset.name);
@@ -126,7 +150,8 @@ export default function ReleasesView({
             `llama.cpp ${tag} instalado. ${res.binaries.length} binarios listos.`,
             "success",
           );
-          setInstalled(await api.listInstalled());
+          await refreshInstalled();
+          onInstalledChange?.();
         }
       } catch (e) {
         toast.push(`Falló la instalación: ${String(e)}`, "danger");
@@ -135,7 +160,7 @@ export default function ReleasesView({
         setProgress(null);
       }
     },
-    [toast],
+    [toast, refreshInstalled, onInstalledChange],
   );
 
   const remove = useCallback(
@@ -143,40 +168,65 @@ export default function ReleasesView({
       try {
         await api.removeInstall(tag);
         toast.push(`Versión ${tag} eliminada`, "info");
-        setInstalled(await api.listInstalled());
+        await refreshInstalled();
+        onInstalledChange?.();
       } catch (e) {
         toast.push(`No se pudo eliminar: ${String(e)}`, "danger");
       } finally {
         setPendingDelete(null);
       }
     },
-    [toast],
+    [toast, refreshInstalled, onInstalledChange],
   );
 
-  const backendFilter = config?.preferredBackend ?? "auto";
+  const visibleReleases = embedded && !showAll ? releases.slice(0, 1) : releases;
+  const visibleStable = embedded && !showAllStable ? stable.slice(0, 1) : stable;
+  const activeTag =
+    installed.find(
+      (build) =>
+        !!activeServer &&
+        !!build.llamaServer &&
+        build.llamaServer.toLowerCase() === activeServer.toLowerCase(),
+    )?.tag ?? null;
+  const customBuild = !!activeServer && !activeTag;
 
-  const filteredReleases = useMemo(() => {
-    if (backendFilter === "auto") return releases;
-    return releases.map((r) => ({
-      ...r,
-      assets: r.assets.filter((a) => a.backend === backendFilter),
-    }));
-  }, [releases, backendFilter]);
+  const pickLocalBuild = useCallback(async () => {
+    if (!onPickLlamaFolder) return;
+    const picked = await onPickLlamaFolder();
+    if (!picked) return;
+    await new Promise((resolve) => setTimeout(resolve, 450));
+    await refreshInstalled();
+    onInstalledChange?.();
+    toast.push("Build local seleccionado", "success");
+  }, [onPickLlamaFolder, refreshInstalled, onInstalledChange, toast]);
+
+  const useBuild = useCallback(
+    async (build: InstalledBuild) => {
+      if (!onUseBuild || serverRunning) return;
+      setSwitching(build.tag);
+      onUseBuild(build);
+      await new Promise((resolve) => setTimeout(resolve, 450));
+      await refreshInstalled();
+      onInstalledChange?.();
+      setSwitching(null);
+    },
+    [onUseBuild, serverRunning, refreshInstalled, onInstalledChange],
+  );
 
   return (
     <div className="space-y-4">
-      <header className="flex flex-wrap items-end justify-between gap-4">
-        <div>
-          <h1 className="text-display font-semibold tracking-tight text-ink-100">
-            llama.cpp
-          </h1>
-          <p className="mt-1 max-w-2xl text-body leading-relaxed text-ink-400">
-            Binarios oficiales de{" "}
-            <span className="mono text-ink-300">ggml-org/llama.cpp</span>, verificados
-            con el hash SHA-256 que publica GitHub antes de instalarse.
-          </p>
-        </div>
-        <div className="flex items-center gap-2">
+      <header
+        className={clsx(
+          "flex flex-wrap justify-between gap-3",
+          embedded ? "items-center" : "items-end gap-4",
+        )}
+      >
+        <p className="max-w-2xl text-body leading-relaxed text-ink-500">
+          {t("Instala y actualiza los binarios oficiales de")}{" "}
+          <span className="mono text-ink-300">ggml-org/llama.cpp</span>. Cada paquete se
+          verifica con el SHA-256 de GitHub antes de instalarse.
+        </p>
+        <div className="flex flex-wrap items-center gap-2">
           <div
             className="flex gap-0.5 rounded-card bg-base-850 p-0.5"
             role="tablist"
@@ -205,142 +255,162 @@ export default function ReleasesView({
               </button>
             ))}
           </div>
+          {onPickLlamaFolder && (
+            <Button
+              icon={<FolderOpen size={13} />}
+              onClick={() => void pickLocalBuild()}
+              variant="quiet"
+              title="Usar un build local, fork o binarios propios"
+            >
+              {t("Build local")}
+            </Button>
+          )}
+          <a
+            href="https://github.com/ggml-org/llama.cpp"
+            target="_blank"
+            rel="noreferrer"
+            className="btn btn-quiet"
+          >
+            <ExternalLink size={13} />
+            {t("Repositorio")}
+          </a>
           <Button
             icon={<RefreshCw size={13} />}
             onClick={load}
             loading={loading}
             variant="ghost"
           >
-            Actualizar
+            {t("Actualizar")}
           </Button>
         </div>
       </header>
 
       {error && (
-        <Alert tone="danger" title="No se pudo contactar con GitHub">
+        <Alert tone="danger" title={t("No se pudo contactar con GitHub")}>
           {error}
           <p className="mt-1.5">
-            Si es un límite de peticiones, añade un token de GitHub en{" "}
-            <strong>Ajustes</strong> para subir el límite de 60 a 5000 por hora.
+            GitHub limita las peticiones anónimas. Espera unos minutos y vuelve a
+            intentarlo.
           </p>
         </Alert>
       )}
 
       {/* --- Versiones instaladas --- */}
       <Card
-        title="Versiones instaladas"
+        title={t("Versiones instaladas")}
         subtitle={
-          installed.length > 0
-            ? `${installed.length} ${installed.length === 1 ? "versión disponible" : "versiones disponibles"}`
-            : "Todavía no hay ninguna versión instalada"
+          loading
+            ? t("Consultando versiones…")
+            : installed.length + (customBuild ? 1 : 0) > 0
+              ? `${installed.length + (customBuild ? 1 : 0)} ${
+                  installed.length + (customBuild ? 1 : 0) === 1
+                    ? t("build disponible")
+                    : t("builds disponibles")
+                }`
+              : t("Todavía no hay ninguna versión instalada")
         }
         actions={
-          installed.length > 0 && (
-            <span className="chip chip-accent">
-              <CheckCircle2 size={11} />
-              Activa: {installed[0]?.tag}
+          !loading &&
+          (activeTag || customBuild) && (
+            <span className="meta-mark meta-mark-accent">
+              {customBuild ? <FolderOpen size={11} /> : <CheckCircle2 size={11} />}
+              {t("En uso")}: {activeTag ?? t("build local")}
             </span>
           )
         }
       >
-        {installed.length === 0 ? (
+        {loading && installed.length === 0 ? (
+          <p className="py-8 text-center text-body text-ink-500">
+            {t("Buscando versiones instaladas…")}
+          </p>
+        ) : installed.length === 0 && !customBuild ? (
           <EmptyState
             icon={<PackageIcon />}
-            title="Sin instalar"
-            description="Elige una versión de la lista y pulsa «Instalar». Se descarga el paquete de tu plataforma y se verifica su integridad."
+            title={t("Sin instalar")}
+            description={t("Elige una versión de la lista y pulsa «Instalar». Se descarga el paquete de tu plataforma y se verifica su integridad.")}
           />
         ) : (
           <ul className="divide-y divide-base-800">
-            {installed.map((b, i) => (
-              <li key={b.tag} className="flex items-center gap-3 py-2.5 first:pt-0 last:pb-0">
-                <span
-                  className={clsx(
-                    "flex h-7 w-7 shrink-0 items-center justify-center rounded-card",
-                    i === 0 ? "bg-accent-600/15 text-accent-400" : "bg-base-800 text-ink-400",
-                  )}
-                >
-                  <HardDrive size={14} />
+            {customBuild && (
+              <li className="flex items-center gap-3 py-2.5 first:pt-0">
+                <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-card bg-accent-600/15 text-accent-400">
+                  <FolderOpen size={14} />
                 </span>
                 <div className="min-w-0 flex-1">
-                  <p className="mono text-label font-medium text-ink-100">{b.tag}</p>
-                  <p className="truncate text-label text-ink-500" title={b.dir}>
-                    {b.dir}
+                  <p className="text-label font-medium text-ink-100">{t("Build local")}</p>
+                  <p
+                    className="truncate text-label text-ink-500"
+                    title={activeServer ? dirname(activeServer) : undefined}
+                  >
+                    {activeServer ? dirname(activeServer) : ""}
                   </p>
                 </div>
-                {i === 0 && <span className="chip chip-accent">En uso</span>}
-                <button
-                  onClick={() => setPendingDelete(b.tag)}
-                  className="btn-quiet cursor-pointer rounded-card p-1.5 text-ink-500 hover:text-danger-400"
-                  aria-label={`Eliminar ${b.tag}`}
-                >
-                  <Trash2 size={14} />
-                </button>
+                <span className="meta-mark meta-mark-accent">
+                  <CheckCircle2 size={11} />
+                  {t("En uso")}
+                </span>
               </li>
-            ))}
+            )}
+            {installed.map((build) => {
+              const isActive = build.tag === activeTag;
+              return (
+                <li key={build.tag} className="flex items-center gap-3 py-2.5 first:pt-0 last:pb-0">
+                  <span
+                    className={clsx(
+                      "flex h-7 w-7 shrink-0 items-center justify-center rounded-card",
+                      isActive
+                        ? "bg-accent-600/15 text-accent-400"
+                        : "bg-base-800 text-ink-400",
+                    )}
+                  >
+                    <HardDrive size={14} />
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    <p className="mono text-label font-medium text-ink-100">{build.tag}</p>
+                    <p className="truncate text-label text-ink-500" title={build.dir}>
+                      {build.dir}
+                    </p>
+                  </div>
+                  {isActive ? (
+                    <span className="meta-mark meta-mark-accent">
+                      <CheckCircle2 size={11} />
+                      {t("En uso")}
+                    </span>
+                  ) : (
+                    onUseBuild && (
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        icon={<Check size={12} />}
+                        loading={switching === build.tag}
+                        disabled={
+                          serverRunning ||
+                          (switching !== null && switching !== build.tag)
+                        }
+                        onClick={() => void useBuild(build)}
+                        title={
+                          serverRunning
+                            ? t("Detén el servidor para cambiar de build")
+                            : t("Usar este build")
+                        }
+                      >
+                        {t("Usar")}
+                      </Button>
+                    )
+                  )}
+                  <button
+                    onClick={() => setPendingDelete(build.tag)}
+                    className="btn-quiet cursor-pointer rounded-card p-1.5 text-ink-500 hover:text-danger-400"
+                    aria-label={`Eliminar ${build.tag}`}
+                  >
+                    <Trash2 size={14} />
+                  </button>
+                </li>
+              );
+            })}
           </ul>
         )}
       </Card>
-
-      {/* --- Recomendación para este equipo --- */}
-      <Section
-        title="Para este equipo"
-        description="Qué paquete encaja con tu hardware y por qué."
-        actions={
-          <select
-            className="field w-auto py-1 text-label"
-            value={backendFilter}
-            onChange={(e) =>
-              config &&
-              onConfigChange({
-                ...config,
-                preferredBackend: e.target.value as AppConfig["preferredBackend"],
-              })
-            }
-            aria-label="Backend preferido"
-          >
-            <option value="auto">Automático</option>
-            <option value="vulkan">Vulkan</option>
-            <option value="cuda">CUDA</option>
-            <option value="rocm">ROCm</option>
-            <option value="cpu">CPU</option>
-          </select>
-        }
-      >
-        <p className="text-body leading-relaxed text-ink-300">
-          {backendFilter === "auto"
-            ? "Vulkan es la opción por defecto: funciona con la mayoría de GPUs de escritorio sin instalar drivers extra."
-            : `Solo se ofrecerán los paquetes de ${backendFilter.toUpperCase()}.`}
-        </p>
-        {hardware && hardware.gpu.length > 0 && (
-          <div className="mt-3 space-y-1 border-t border-base-800 pt-3">
-            <p className="text-meta tracking-wide text-ink-400 uppercase">
-              En este equipo
-            </p>
-            {hardware.gpu.map((g, i) => (
-              <div key={i} className="flex items-center gap-2.5">
-                <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-control bg-accent-500/12 text-accent-400">
-                  <Cpu size={12} />
-                </span>
-                <span className="min-w-0 flex-1 truncate text-label text-ink-200">
-                  {g.name}
-                </span>
-                <span className="mono text-meta text-ink-400">
-                  {g.vramTotalMib > 0
-                    ? `${(g.vramTotalMib / 1024).toFixed(1)} GB`
-                    : g.api}
-                </span>
-                <span className="chip">
-                  {g.kind === "discrete"
-                    ? "Dedicada"
-                    : g.kind === "integrated"
-                      ? "Integrada"
-                      : g.kind}
-                </span>
-              </div>
-            ))}
-          </div>
-        )}
-      </Section>
 
       {/* --- Progreso de descarga --- */}
       {progress && (
@@ -365,14 +435,14 @@ export default function ReleasesView({
       {/* --- Releases estables --- */}
       {channel === "stable" && (
         <div className="space-y-2">
-          <Alert tone="info" title="Cómo funcionan las versiones estables">
-            Las releases con etiqueta <span className="mono">vX.Y.Z</span> no
-            publican binarios: publican un puntero{" "}
-            <span className="mono">nightly-tag.txt</span> con la build exacta
-            <span className="mono"> b#####</span> de ese mismo commit. EzLlamaCpp
-            resuelve ese puntero y te muestra los paquetes reales para que
-            puedas instalarlos aquí mismo.
-          </Alert>
+          <p className="flex items-start gap-2 px-1 py-1 text-label leading-relaxed text-ink-500">
+            <Info size={13} className="mt-0.5 shrink-0" />
+            <span>
+              Las etiquetas <span className="mono">vX.Y.Z</span> no publican binarios:
+              apuntan con <span className="mono">nightly-tag.txt</span> a la build
+              real. Aquí se resuelve ese puntero automáticamente.
+            </span>
+          </p>
 
           {stable.length === 0 && !loadingStable && (
             <Section title="Sin versiones estables">
@@ -392,13 +462,34 @@ export default function ReleasesView({
             </Section>
           )}
 
-          {stable.map((s) => (
+          {visibleStable.map((s) => {
+            const compatAssets = s.assets.filter((a) => a.compatible && !a.isCudart);
+            const orderedAssets = [...compatAssets].sort((a, b) => {
+              const ra = a.name === s.recommended ? 0 : 1;
+              const rb = b.name === s.recommended ? 0 : 1;
+              if (ra !== rb) return ra - rb;
+              const oa = backendOrder(a.backend);
+              const ob = backendOrder(b.backend);
+              if (oa !== ob) return oa - ob;
+              return a.size - b.size;
+            });
+            const preferredAssets = s.recommended
+              ? orderedAssets.filter((asset) => asset.name === s.recommended)
+              : [];
+            const visibleAssets =
+              embedded && showAllAssets !== s.tag
+                ? preferredAssets.length > 0
+                  ? preferredAssets
+                  : orderedAssets.slice(0, 1)
+                : orderedAssets;
+
+            return (
             <Section
               key={s.tag}
               title={
                 <span className="flex items-center gap-2">
                   <span className="mono">{s.tag}</span>
-                  <span className="chip chip-ok">Estable</span>
+                  <span className="meta-mark meta-mark-ok">{t("Estable")}</span>
                 </span>
               }
               description={
@@ -408,7 +499,7 @@ export default function ReleasesView({
                     <>
                       <span aria-hidden>·</span>
                       <span className="mono text-ink-300">{s.nightlyTag}</span>
-                      <span className="chip">build equivalente</span>
+                      <span className="meta-mark">build equivalente</span>
                     </>
                   )}
                 </span>
@@ -419,10 +510,9 @@ export default function ReleasesView({
                   {s.unavailableReason}
                 </Alert>
               ) : (
-                <ul className="-mx-1">
-                  {s.assets
-                    .filter((a) => a.compatible && !a.isCudart)
-                    .map((asset) => (
+                <>
+                  <ul className="-mx-1">
+                    {visibleAssets.map((asset) => (
                       <li
                         key={asset.name}
                         className="row flex items-center gap-3 px-1 py-2"
@@ -443,18 +533,18 @@ export default function ReleasesView({
                               {backendLabel(asset.backend)}
                             </span>
                             {asset.name === s.recommended && (
-                              <span className="chip chip-accent">
+                              <span className="meta-mark meta-mark-accent">
                                 <Zap size={9} />
-                                Recomendado
+                                {t("Recomendado")}
                               </span>
                             )}
                             {asset.sha256 && (
                               <span
-                                className="chip chip-ok"
+                                className="meta-mark meta-mark-ok"
                                 title={`SHA-256: ${asset.sha256}`}
                               >
                                 <CheckCircle2 size={9} />
-                                Verificado
+                                {t("Verificado")}
                               </span>
                             )}
                           </div>
@@ -475,14 +565,41 @@ export default function ReleasesView({
                           loading={installing === asset.name}
                           onClick={() => install(s.nightlyTag ?? s.tag, asset)}
                         >
-                          Instalar
+                          {t("Instalar")}
                         </Button>
                       </li>
                     ))}
-                </ul>
+                  </ul>
+                  {embedded && orderedAssets.length > 1 && (
+                    <button
+                      onClick={() =>
+                        setShowAllAssets((value) => (value === s.tag ? null : s.tag))
+                      }
+                      className="btn btn-quiet mt-1 w-full cursor-pointer justify-center border-t border-base-800 py-2 text-label text-ink-400 hover:text-ink-100"
+                      aria-expanded={showAllAssets === s.tag}
+                    >
+                      {showAllAssets === s.tag
+                        ? t("Mostrar solo el recomendado")
+                        : `${t("Ver")} ${orderedAssets.length - visibleAssets.length} ${t("paquetes alternativos")}`}
+                    </button>
+                  )}
+                </>
               )}
             </Section>
-          ))}
+            );
+          })}
+
+          {embedded && stable.length > 1 && (
+            <button
+              onClick={() => setShowAllStable((value) => !value)}
+              className="btn btn-quiet w-full cursor-pointer justify-center border border-base-800 py-2 text-label text-ink-400 hover:text-ink-100"
+              aria-expanded={showAllStable}
+            >
+              {showAllStable
+                ? t("Mostrar solo la última")
+                : `Ver ${stable.length - 1} versiones estables anteriores`}
+            </button>
+          )}
         </div>
       )}
 
@@ -503,7 +620,7 @@ export default function ReleasesView({
           </Card>
         )}
 
-        {filteredReleases.map((rel) => {
+        {visibleReleases.map((rel) => {
           const isOpen = expanded === rel.tag;
           const compat = rel.assets.filter((a) => a.compatible && !a.isCudart);
           const recommended = rel.recommended;
@@ -518,6 +635,15 @@ export default function ReleasesView({
             if (oa !== ob) return oa - ob;
             return a.size - b.size;
           });
+          const preferredAssets = recommended
+            ? ordered.filter((asset) => asset.name === recommended)
+            : [];
+          const shown =
+            embedded && showAllAssets !== rel.tag
+              ? preferredAssets.length > 0
+                ? preferredAssets
+                : ordered.slice(0, 1)
+              : ordered;
 
           return (
             <section key={rel.tag} className="card overflow-hidden">
@@ -531,11 +657,13 @@ export default function ReleasesView({
                     <span className="mono text-[0.8125rem] font-semibold text-ink-100">
                       {rel.tag}
                     </span>
-                    {rel.prerelease && <span className="chip chip-violet">Nightly</span>}
+                    {rel.prerelease && (
+                      <span className="meta-mark meta-mark-violet">{t("Nightly")}</span>
+                    )}
                     {recommended && (
-                      <span className="chip chip-accent">
+                      <span className="meta-mark meta-mark-accent">
                         <Zap size={10} />
-                        Recomendado
+                        {t("Recomendado")}
                       </span>
                     )}
                   </div>
@@ -564,32 +692,58 @@ export default function ReleasesView({
                   {compat.length === 0 ? (
                     <div className="px-4 py-5">
                       <Alert tone="warn" title="No hay ningún paquete para este equipo">
-                        Esta release no publica binarios para{" "}
-                        <span className="mono">{config?.preferredBackend ?? "auto"}</span> en{" "}
+                        Esta release no publica binarios compatibles con{" "}
                         <span className="mono">
                           {rel.assets[0]?.os ?? "tu plataforma"}
                         </span>
-                        . Prueba a cambiar el backend en Ajustes.
+                        . Prueba con otra versión.
                       </Alert>
                     </div>
                   ) : (
-                    <ul className="divide-y divide-base-800">
-                      {ordered.map((asset) => (
-                        <AssetRow
-                          key={asset.name}
-                          asset={asset}
-                          recommended={asset.name === recommended}
-                          installing={installing === asset.name}
-                          onInstall={() => install(rel.tag, asset)}
-                        />
-                      ))}
-                    </ul>
+                    <>
+                      <ul className="divide-y divide-base-800">
+                        {shown.map((asset) => (
+                          <AssetRow
+                            key={asset.name}
+                            asset={asset}
+                            recommended={asset.name === recommended}
+                            installing={installing === asset.name}
+                            onInstall={() => install(rel.tag, asset)}
+                          />
+                        ))}
+                      </ul>
+                      {embedded && ordered.length > 1 && (
+                        <button
+                          onClick={() =>
+                            setShowAllAssets((value) => (value === rel.tag ? null : rel.tag))
+                          }
+                          className="btn btn-quiet w-full cursor-pointer justify-center border-t border-base-800 py-2 text-label text-ink-400 hover:text-ink-100"
+                          aria-expanded={showAllAssets === rel.tag}
+                        >
+                          {showAllAssets === rel.tag
+                            ? t("Mostrar solo el recomendado")
+                            : `${t("Ver")} ${ordered.length - shown.length} ${t("paquetes alternativos")}`}
+                        </button>
+                      )}
+                    </>
                   )}
                 </div>
               )}
             </section>
           );
         })}
+
+        {embedded && releases.length > 1 && (
+          <button
+            onClick={() => setShowAll((value) => !value)}
+            className="btn btn-quiet w-full cursor-pointer justify-center border border-base-800 py-2 text-label text-ink-400 hover:text-ink-100"
+            aria-expanded={showAll}
+          >
+            {showAll
+              ? t("Mostrar solo la última")
+              : `${t("Ver")} ${releases.length - 1} ${t("versiones anteriores")}`}
+          </button>
+        )}
       </div>
 
       <ConfirmDialog
@@ -658,15 +812,17 @@ function AssetRow({
           <span className="text-label font-medium text-ink-100">
             {backendLabel(asset.backend)}
           </span>
-          <span className="chip">{asset.arch}</span>
-          {asset.cudaVersion && <span className="chip">CUDA {asset.cudaVersion}</span>}
+          <span className="meta-mark">{asset.arch}</span>
+          {asset.cudaVersion && (
+            <span className="meta-mark">CUDA {asset.cudaVersion}</span>
+          )}
           {asset.sha256 && (
             <span
-              className="chip chip-accent"
+              className="meta-mark meta-mark-ok"
               title={`SHA-256: ${asset.sha256}`}
             >
               <CheckCircle2 size={10} />
-              Verificado
+              {t("Verificado")}
             </span>
           )}
         </div>
@@ -684,7 +840,7 @@ function AssetRow({
         loading={installing}
         onClick={onInstall}
       >
-        Instalar
+        {t("Instalar")}
       </Button>
     </li>
   );
@@ -695,5 +851,3 @@ function PackageIcon() {
     <Info size={20} />
   );
 }
-
-export { AlertTriangle };

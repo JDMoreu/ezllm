@@ -1,4 +1,4 @@
-//! EzLlamaCpp — backend en Rust.
+//! EzLLM — backend en Rust.
 //!
 //! Expone al frontend (React) todo lo que la app necesita:
 //!   - releases oficiales de llama.cpp y descarga verificada
@@ -6,9 +6,11 @@
 //!   - hardware real (VRAM, CPU, RAM) y estimación de memoria
 //!   - arranque/parada de `llama-server` con la configuración de la UI
 
+mod arghelp;
 mod config;
 mod gguf;
 mod hardware;
+mod hf;
 mod install;
 pub mod install_probe;
 pub mod live_check;
@@ -94,6 +96,11 @@ fn default_models_dir() -> String {
 #[tauri::command]
 fn default_llama_dir() -> String {
     config::llama_dir().to_string_lossy().into_owned()
+}
+
+#[tauri::command]
+fn config_path() -> String {
+    config::config_path().to_string_lossy().into_owned()
 }
 
 // --- Releases ---------------------------------------------------------------
@@ -245,6 +252,7 @@ async fn list_stable_releases(
 /// ese puntero y trae los assets REALES de la nightly, para que el usuario
 /// pueda instalar una version estable sin salir de la pestana.
 #[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct StableRelease {
     pub tag: String,
     pub nightly_tag: Option<String>,
@@ -392,6 +400,79 @@ async fn find_companions(model_path: String, dir: String) -> CmdResult<(Option<S
     })
     .await
     .map_err(|e| format!("Error: {e}"))?
+}
+
+// --- Catálogo de argumentos -------------------------------------------------
+
+/// Argumentos reales del `llama-server` instalado.
+#[tauri::command]
+async fn server_help(state: State<'_, AppState>) -> CmdResult<arghelp::HelpCatalog> {
+    let cfg = state.config.lock().await.clone();
+    tokio::task::spawn_blocking(move || arghelp::read(&cfg))
+        .await
+        .map_err(|e| format!("Error leyendo el catálogo: {e}"))?
+}
+
+// --- Hugging Face -----------------------------------------------------------
+
+#[tauri::command]
+async fn hf_search(
+    state: State<'_, AppState>,
+    query: String,
+    sort: Option<String>,
+    limit: Option<u32>,
+) -> CmdResult<Vec<hf::HfModelSummary>> {
+    hf::search(
+        &state.client,
+        &query,
+        sort.as_deref().unwrap_or("downloads"),
+        limit.unwrap_or(24),
+    )
+    .await
+}
+
+/// Modelos populares de texto para la portada del buscador.
+#[tauri::command]
+async fn hf_popular(
+    state: State<'_, AppState>,
+    sort: Option<String>,
+    limit: Option<u32>,
+) -> CmdResult<Vec<hf::HfModelSummary>> {
+    hf::popular(
+        &state.client,
+        sort.as_deref().unwrap_or("downloads"),
+        limit.unwrap_or(12),
+    )
+    .await
+}
+
+#[tauri::command]
+async fn hf_model(state: State<'_, AppState>, repo: String) -> CmdResult<hf::HfModelDetail> {
+    hf::detail(&state.client, &repo).await
+}
+
+/// Descarga una o varias partes de una cuantización a la carpeta de modelos.
+///
+/// El progreso se emite por `hf-download-progress`.
+#[tauri::command]
+async fn hf_download(
+    app: tauri::AppHandle,
+    state: State<'_, AppState>,
+    repo: String,
+    paths: Vec<String>,
+) -> CmdResult<hf::HfDownloadResult> {
+    let models_dir = {
+        let cfg = state.config.lock().await;
+        cfg.models_dir
+            .clone()
+            .map(PathBuf::from)
+            .unwrap_or_else(config::default_models_dir)
+    };
+    let progress_app = app.clone();
+    hf::download(&state.client, &repo, &paths, &models_dir, move |progress| {
+        let _ = progress_app.emit("hf-download-progress", progress);
+    })
+    .await
 }
 
 // --- Memoria ----------------------------------------------------------------
@@ -578,6 +659,60 @@ async fn apply_deployment(
     Ok((cfg.clone(), deployment))
 }
 
+fn deployment_from_json(text: &str, fallback_name: &str) -> Result<config::Deployment, String> {
+    let mut deployment = if let Ok(deployment) = serde_json::from_str::<config::Deployment>(text) {
+        deployment
+    } else if let Ok(app) = serde_json::from_str::<config::AppConfig>(text) {
+        config::Deployment {
+            id: String::new(),
+            name: fallback_name.to_string(),
+            model_path: app.last_model,
+            mmproj_path: app.last_mmproj,
+            draft_path: app.last_draft_model,
+            server: app.server,
+            notes: String::new(),
+            created_at: 0,
+        }
+    } else {
+        return Err("El archivo no contiene una configuración de EzLLM válida.".to_string());
+    };
+
+    deployment.id.clear();
+    deployment.created_at = 0;
+    if deployment.name.trim().is_empty() {
+        deployment.name = fallback_name.to_string();
+    }
+    config::migrate_to_raw(&mut deployment.server);
+    Ok(deployment)
+}
+
+/// Lee una configuración exportada y la convierte en un despliegue portátil.
+///
+/// Acepta tanto un despliegue exportado por la app como una configuración
+/// global completa. El id se descarta para no pisar un preset existente.
+#[tauri::command]
+async fn read_deployment_file(path: String) -> CmdResult<config::Deployment> {
+    let text = std::fs::read_to_string(&path)
+        .map_err(|e| format!("No se pudo leer la configuración: {e}"))?;
+    let file_path = PathBuf::from(&path);
+    let fallback_name = file_path
+        .file_stem()
+        .and_then(|name| name.to_str())
+        .filter(|name| !name.trim().is_empty())
+        .unwrap_or("Configuración importada");
+    deployment_from_json(&text, fallback_name)
+}
+
+/// Guarda un despliegue en un archivo JSON para compartirlo o conservarlo.
+#[tauri::command]
+async fn write_deployment_file(path: String, deployment: config::Deployment) -> CmdResult<String> {
+    let text = serde_json::to_string_pretty(&deployment)
+        .map_err(|e| format!("No se pudo serializar la configuración: {e}"))?;
+    std::fs::write(&path, text)
+        .map_err(|e| format!("No se pudo escribir la configuración: {e}"))?;
+    Ok(path)
+}
+
 /// Duplica un despliegue para poder variants sin perder el original.
 #[tauri::command]
 async fn duplicate_deployment(
@@ -738,7 +873,7 @@ pub fn run() {
     env_logger::init();
 
     let client = reqwest::Client::builder()
-        .user_agent("EzLlamaCpp")
+        .user_agent("EzLLM")
         .connect_timeout(std::time::Duration::from_secs(15))
         .timeout(std::time::Duration::from_secs(60 * 30))
         .build()
@@ -758,6 +893,7 @@ pub fn run() {
             set_config,
             default_models_dir,
             default_llama_dir,
+            config_path,
             list_releases,
             get_release,
             resolve_stable_tag,
@@ -768,6 +904,11 @@ pub fn run() {
             scan_models,
             inspect_model,
             find_companions,
+            server_help,
+            hf_search,
+            hf_popular,
+            hf_model,
+            hf_download,
             estimate_memory,
             hardware_report,
             start_server,
@@ -788,7 +929,78 @@ pub fn run() {
             delete_deployment,
             apply_deployment,
             duplicate_deployment,
+            read_deployment_file,
+            write_deployment_file,
         ])
         .run(tauri::generate_context!())
-        .expect("error al iniciar EzLlamaCpp");
+        .expect("error al iniciar EzLLM");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{StableRelease, deployment_from_json};
+    use crate::config;
+
+    #[test]
+    fn deployment_file_imports_and_clears_identity() {
+        let deployment = config::Deployment {
+            id: "d1".into(),
+            name: "Qwen 32k".into(),
+            model_path: Some(r"C:\models\qwen.gguf".into()),
+            mmproj_path: None,
+            draft_path: None,
+            server: config::ServerConfig {
+                extra_args: "--jinja -c 32768".into(),
+                raw_mode: true,
+                ..config::ServerConfig::default()
+            },
+            notes: "importado".into(),
+            created_at: 42,
+        };
+
+        let parsed =
+            deployment_from_json(&serde_json::to_string(&deployment).unwrap(), "respaldo").unwrap();
+
+        assert_eq!(parsed.name, "Qwen 32k");
+        assert_eq!(parsed.model_path.as_deref(), Some(r"C:\models\qwen.gguf"));
+        assert_eq!(parsed.server.extra_args, "--jinja -c 32768");
+        assert_eq!(parsed.id, "");
+        assert_eq!(parsed.created_at, 0);
+    }
+
+    #[test]
+    fn app_config_file_can_be_imported_as_a_deployment() {
+        let mut app = config::AppConfig::default();
+        app.last_model = Some(r"C:\models\gemma.gguf".into());
+        app.server.extra_args = "--metrics".into();
+
+        let parsed = deployment_from_json(&serde_json::to_string(&app).unwrap(), "Gemma").unwrap();
+
+        assert_eq!(parsed.name, "Gemma");
+        assert_eq!(parsed.model_path.as_deref(), Some(r"C:\models\gemma.gguf"));
+        assert_eq!(parsed.server.extra_args, "--metrics");
+    }
+
+    #[test]
+    fn stable_release_serializes_its_fields_in_camel_case() {
+        let release = StableRelease {
+            tag: "v0.7.0".into(),
+            nightly_tag: Some("b11669".into()),
+            published_at: Some("2026-10-15T17:13:19Z".into()),
+            html_url: "https://github.com/ggml-org/llama.cpp/releases/tag/v0.7.0".into(),
+            assets: Vec::new(),
+            recommended: None,
+            unavailable_reason: None,
+        };
+
+        let value = serde_json::to_value(release).expect("StableRelease must serialize");
+        assert_eq!(value["nightlyTag"], "b11669");
+        assert_eq!(value["publishedAt"], "2026-10-15T17:13:19Z");
+        assert_eq!(
+            value["htmlUrl"],
+            "https://github.com/ggml-org/llama.cpp/releases/tag/v0.7.0"
+        );
+        assert!(value.get("nightly_tag").is_none());
+        assert!(value.get("published_at").is_none());
+    }
 }
