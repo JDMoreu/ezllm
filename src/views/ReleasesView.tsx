@@ -3,6 +3,7 @@ import clsx from "clsx";
 import {
   Check,
   CheckCircle2,
+  ChevronDown,
   Cpu,
   Download,
   ExternalLink,
@@ -221,15 +222,11 @@ export default function ReleasesView({
           embedded ? "items-center" : "items-end gap-4",
         )}
       >
-        <p className="max-w-2xl text-body leading-relaxed text-ink-500">
-          {t("Instala y actualiza los binarios oficiales de")}{" "}
-          <span className="mono text-ink-300">ggml-org/llama.cpp</span>. Cada paquete se
-          verifica con el SHA-256 de GitHub antes de instalarse.
-        </p>
         <div className="flex flex-wrap items-center gap-2">
+          <span className="text-meta text-ink-500">{t("Canal")}</span>
           <div
-            className="flex gap-0.5 rounded-card bg-base-850 p-0.5"
-            role="tablist"
+            className="flex gap-0.5 rounded-card border border-base-700 bg-base-850 p-0.5"
+            role="group"
             aria-label="Canal de versión"
           >
             {(
@@ -240,15 +237,15 @@ export default function ReleasesView({
             ).map(([id, label, hint]) => (
               <button
                 key={id}
-                role="tab"
-                aria-selected={channel === id}
+                type="button"
+                aria-pressed={channel === id}
                 onClick={() => setChannel(id)}
                 title={hint}
                 className={clsx(
-                  "cursor-pointer rounded-control px-2.5 py-1 text-label font-medium transition-colors duration-150",
+                  "cursor-pointer rounded-control border px-2.5 py-1 text-label font-medium transition-colors duration-150",
                   channel === id
-                    ? "bg-base-800 text-ink-100 shadow-[inset_0_1px_0_0_rgb(255_255_255/0.04)]"
-                    : "text-ink-400 hover:text-ink-200",
+                    ? "border-base-700 bg-base-800 text-ink-100 shadow-[inset_0_1px_0_0_rgb(255_255_255/0.04)]"
+                    : "border-transparent text-ink-400 hover:text-ink-200",
                 )}
               >
                 {label}
@@ -292,6 +289,11 @@ export default function ReleasesView({
             GitHub limita las peticiones anónimas. Espera unos minutos y vuelve a
             intentarlo.
           </p>
+          <div className="mt-2">
+            <Button size="sm" variant="ghost" onClick={() => void load()}>
+              {t("Reintentar")}
+            </Button>
+          </div>
         </Alert>
       )}
 
@@ -309,16 +311,13 @@ export default function ReleasesView({
                 }`
               : t("Todavía no hay ninguna versión instalada")
         }
-        actions={
-          !loading &&
-          (activeTag || customBuild) && (
-            <span className="meta-mark meta-mark-accent">
-              {customBuild ? <FolderOpen size={11} /> : <CheckCircle2 size={11} />}
-              {t("En uso")}: {activeTag ?? t("build local")}
-            </span>
-          )
-        }
       >
+        {serverRunning && (
+          <p className="mb-2 flex items-start gap-1.5 text-label leading-relaxed text-warn-400">
+            <Info size={13} className="mt-0.5 shrink-0" aria-hidden />
+            {t("Detén el servidor para cambiar de build.")}
+          </p>
+        )}
         {loading && installed.length === 0 ? (
           <p className="py-8 text-center text-body text-ink-500">
             {t("Buscando versiones instaladas…")}
@@ -332,7 +331,11 @@ export default function ReleasesView({
         ) : (
           <ul className="divide-y divide-base-800">
             {customBuild && (
-              <li className="flex items-center gap-3 py-2.5 first:pt-0">
+              <li className="relative flex items-center gap-3 py-2.5 pl-2 first:pt-0">
+                <span
+                  className="absolute inset-y-2 left-0 w-0.5 rounded-full bg-accent-500"
+                  aria-hidden
+                />
                 <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-card bg-accent-600/15 text-accent-400">
                   <FolderOpen size={14} />
                 </span>
@@ -354,7 +357,16 @@ export default function ReleasesView({
             {installed.map((build) => {
               const isActive = build.tag === activeTag;
               return (
-                <li key={build.tag} className="flex items-center gap-3 py-2.5 first:pt-0 last:pb-0">
+                <li
+                  key={build.tag}
+                  className="relative flex items-center gap-3 py-2.5 pl-2 first:pt-0 last:pb-0"
+                >
+                  {isActive && (
+                    <span
+                      className="absolute inset-y-2 left-0 w-0.5 rounded-full bg-accent-500"
+                      aria-hidden
+                    />
+                  )}
                   <span
                     className={clsx(
                       "flex h-7 w-7 shrink-0 items-center justify-center rounded-card",
@@ -400,8 +412,14 @@ export default function ReleasesView({
                   )}
                   <button
                     onClick={() => setPendingDelete(build.tag)}
-                    className="btn-quiet cursor-pointer rounded-card p-1.5 text-ink-500 hover:text-danger-400"
+                    className="btn-quiet cursor-pointer rounded-card p-1.5 text-ink-500 hover:text-danger-400 disabled:cursor-not-allowed disabled:opacity-40"
                     aria-label={`Eliminar ${build.tag}`}
+                    disabled={serverRunning && isActive}
+                    title={
+                      serverRunning && isActive
+                        ? t("Detén el servidor para eliminar este build")
+                        : t("Eliminar build")
+                    }
                   >
                     <Trash2 size={14} />
                   </button>
@@ -575,12 +593,20 @@ export default function ReleasesView({
                       onClick={() =>
                         setShowAllAssets((value) => (value === s.tag ? null : s.tag))
                       }
-                      className="btn btn-quiet mt-1 w-full cursor-pointer justify-center border-t border-base-800 py-2 text-label text-ink-400 hover:text-ink-100"
+                      className="btn btn-quiet mt-1 inline-flex w-full cursor-pointer items-center justify-center gap-1.5 border-t border-base-800 py-2 text-label text-ink-400 hover:text-ink-100"
                       aria-expanded={showAllAssets === s.tag}
                     >
                       {showAllAssets === s.tag
                         ? t("Mostrar solo el recomendado")
                         : `${t("Ver")} ${orderedAssets.length - visibleAssets.length} ${t("paquetes alternativos")}`}
+                      <ChevronDown
+                        size={13}
+                        className={clsx(
+                          "transition-transform duration-200",
+                          showAllAssets === s.tag && "rotate-180",
+                        )}
+                        aria-hidden
+                      />
                     </button>
                   )}
                 </>
@@ -592,12 +618,20 @@ export default function ReleasesView({
           {embedded && stable.length > 1 && (
             <button
               onClick={() => setShowAllStable((value) => !value)}
-              className="btn btn-quiet w-full cursor-pointer justify-center border border-base-800 py-2 text-label text-ink-400 hover:text-ink-100"
+              className="btn btn-quiet inline-flex w-full cursor-pointer items-center justify-center gap-1.5 border border-base-800 py-2 text-label text-ink-400 hover:text-ink-100"
               aria-expanded={showAllStable}
             >
               {showAllStable
                 ? t("Mostrar solo la última")
                 : `Ver ${stable.length - 1} versiones estables anteriores`}
+              <ChevronDown
+                size={13}
+                className={clsx(
+                  "transition-transform duration-200",
+                  showAllStable && "rotate-180",
+                )}
+                aria-hidden
+              />
             </button>
           )}
         </div>
@@ -647,37 +681,48 @@ export default function ReleasesView({
 
           return (
             <section key={rel.tag} className="card overflow-hidden">
-              <button
-                onClick={() => setExpanded(isOpen ? null : rel.tag)}
-                className="flex w-full cursor-pointer items-center gap-3 px-4 py-3 text-left transition-colors duration-200 hover:bg-base-850"
-                aria-expanded={isOpen}
-              >
-                <div className="min-w-0 flex-1">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <span className="mono text-[0.8125rem] font-semibold text-ink-100">
-                      {rel.tag}
-                    </span>
-                    {rel.prerelease && (
-                      <span className="meta-mark meta-mark-violet">{t("Nightly")}</span>
-                    )}
-                    {recommended && (
-                      <span className="meta-mark meta-mark-accent">
-                        <Zap size={10} />
-                        {t("Recomendado")}
+              <div className="flex items-center gap-3 px-4 py-3">
+                <button
+                  type="button"
+                  onClick={() => setExpanded(isOpen ? null : rel.tag)}
+                  className="flex min-w-0 flex-1 cursor-pointer items-center gap-3 rounded-control text-left transition-colors duration-200 hover:bg-base-850"
+                  aria-expanded={isOpen}
+                  aria-controls={`release-${rel.tag}`}
+                >
+                  <div className="min-w-0 flex-1">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="mono text-[0.8125rem] font-semibold text-ink-100">
+                        {rel.tag}
                       </span>
-                    )}
+                      {rel.prerelease && (
+                        <span className="meta-mark meta-mark-violet">{t("Nightly")}</span>
+                      )}
+                      {recommended && (
+                        <span className="meta-mark meta-mark-accent">
+                          <Zap size={10} />
+                          {t("Recomendado")}
+                        </span>
+                      )}
+                    </div>
+                    <p className="mt-0.5 text-label text-ink-500">
+                      {formatDate(rel.publishedAt)} ·{" "}
+                      {rel.assets.filter((a) => !a.isCudart).length} paquetes
+                    </p>
                   </div>
-                  <p className="mt-0.5 text-label text-ink-500">
-                    {formatDate(rel.publishedAt)} ·{" "}
-                    {rel.assets.filter((a) => !a.isCudart).length} paquetes
-                  </p>
-                </div>
+                  <ChevronDown
+                    size={13}
+                    className={clsx(
+                      "shrink-0 text-ink-500 transition-transform duration-200",
+                      isOpen && "rotate-180",
+                    )}
+                    aria-hidden
+                  />
+                </button>
                 {isOpen && (
                   <a
                     href={rel.htmlUrl}
                     target="_blank"
                     rel="noreferrer"
-                    onClick={(e) => e.stopPropagation()}
                     className="btn btn-quiet px-2 py-1 text-label"
                     title="Abrir en GitHub"
                   >
@@ -685,10 +730,10 @@ export default function ReleasesView({
                     GitHub
                   </a>
                 )}
-              </button>
+              </div>
 
               {isOpen && (
-                <div className="border-t border-base-800">
+                <div id={`release-${rel.tag}`} className="border-t border-base-800">
                   {compat.length === 0 ? (
                     <div className="px-4 py-5">
                       <Alert tone="warn" title="No hay ningún paquete para este equipo">
@@ -717,12 +762,20 @@ export default function ReleasesView({
                           onClick={() =>
                             setShowAllAssets((value) => (value === rel.tag ? null : rel.tag))
                           }
-                          className="btn btn-quiet w-full cursor-pointer justify-center border-t border-base-800 py-2 text-label text-ink-400 hover:text-ink-100"
+                          className="btn btn-quiet inline-flex w-full cursor-pointer items-center justify-center gap-1.5 border-t border-base-800 py-2 text-label text-ink-400 hover:text-ink-100"
                           aria-expanded={showAllAssets === rel.tag}
                         >
                           {showAllAssets === rel.tag
                             ? t("Mostrar solo el recomendado")
                             : `${t("Ver")} ${ordered.length - shown.length} ${t("paquetes alternativos")}`}
+                          <ChevronDown
+                            size={13}
+                            className={clsx(
+                              "transition-transform duration-200",
+                              showAllAssets === rel.tag && "rotate-180",
+                            )}
+                            aria-hidden
+                          />
                         </button>
                       )}
                     </>
@@ -736,12 +789,20 @@ export default function ReleasesView({
         {embedded && releases.length > 1 && (
           <button
             onClick={() => setShowAll((value) => !value)}
-            className="btn btn-quiet w-full cursor-pointer justify-center border border-base-800 py-2 text-label text-ink-400 hover:text-ink-100"
+            className="btn btn-quiet inline-flex w-full cursor-pointer items-center justify-center gap-1.5 border border-base-800 py-2 text-label text-ink-400 hover:text-ink-100"
             aria-expanded={showAll}
           >
             {showAll
               ? t("Mostrar solo la última")
               : `${t("Ver")} ${releases.length - 1} ${t("versiones anteriores")}`}
+            <ChevronDown
+              size={13}
+              className={clsx(
+                "transition-transform duration-200",
+                showAll && "rotate-180",
+              )}
+              aria-hidden
+            />
           </button>
         )}
       </div>
@@ -760,6 +821,13 @@ export default function ReleasesView({
         onConfirm={() => pendingDelete && remove(pendingDelete)}
         onCancel={() => setPendingDelete(null)}
       />
+
+      {/* La explicación cierra la vista: arriba competía con los controles. */}
+      <p className="max-w-2xl border-t border-base-800 pt-3 text-meta leading-relaxed text-ink-500">
+        {t("Instala y actualiza los binarios oficiales de")}{" "}
+        <span className="mono text-ink-400">ggml-org/llama.cpp</span>.{" "}
+        {t("Cada paquete se verifica con el SHA-256 de GitHub antes de instalarse.")}
+      </p>
     </div>
   );
 }

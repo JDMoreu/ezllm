@@ -37,7 +37,7 @@ const WORKSPACE_TABS: {
 }[] = [
   { id: "run", label: "Ejecutar", icon: Play },
   { id: "models", label: "Modelos", icon: Boxes },
-  { id: "runtime", label: "Runtime", icon: Cpu },
+  { id: "runtime", label: "Motor", icon: Cpu },
 ];
 
 function Shell() {
@@ -281,6 +281,25 @@ function Shell() {
     }
   }, [configPath, toast]);
 
+  const openModelsFolder = useCallback(async () => {
+    if (!modelsDir) return;
+    try {
+      await api.openFolder(modelsDir);
+    } catch (e) {
+      toast.push(`No se pudo abrir la carpeta de modelos: ${String(e)}`, "danger");
+    }
+  }, [modelsDir, toast]);
+
+  const openLlamaFolder = useCallback(async () => {
+    const dir = config?.llamaDir ?? installed[0]?.dir;
+    if (!dir) return;
+    try {
+      await api.openFolder(dir);
+    } catch (e) {
+      toast.push(`No se pudo abrir la carpeta de llama.cpp: ${String(e)}`, "danger");
+    }
+  }, [config, installed, toast]);
+
   const pickLlamaFolder = useCallback(async () => {
     if (!config) return false;
     try {
@@ -379,6 +398,9 @@ function Shell() {
 
   return (
     <div className="flex h-full flex-col">
+      <a href="#main" className="skip-link">
+        {t("Saltar al contenido")}
+      </a>
       {/* ==================================================================
           Barra de la ventana: chrome propio de la app. La zona vacía
           arrastra la ventana y los controles imitan la jerarquía visual
@@ -389,23 +411,50 @@ function Shell() {
           <span
             className="pointer-events-none flex h-7 w-7 shrink-0 items-center justify-center"
             data-tauri-drag-region
+            aria-hidden
           >
             <Logo size={28} />
           </span>
-          <span className="app-titlebar-name" data-tauri-drag-region>
+          <h1 className="app-titlebar-name" data-tauri-drag-region>
             EzLLM
-          </span>
+          </h1>
         </div>
 
-        <nav className="workspace-tabs" role="tablist" aria-label="Espacio de trabajo">
+        <nav
+          className="workspace-tabs"
+          role="tablist"
+          aria-label="Espacio de trabajo"
+          onKeyDown={(event) => {
+            if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
+            event.preventDefault();
+            const current = WORKSPACE_TABS.findIndex((item) => item.id === tab);
+            const nextIndex =
+              event.key === "Home"
+                ? 0
+                : event.key === "End"
+                  ? WORKSPACE_TABS.length - 1
+                  : (current +
+                      (event.key === "ArrowRight" ? 1 : -1) +
+                      WORKSPACE_TABS.length) %
+                    WORKSPACE_TABS.length;
+            const next = WORKSPACE_TABS[nextIndex];
+            setTab(next.id);
+            requestAnimationFrame(() =>
+              document.getElementById(`workspace-tab-${next.id}`)?.focus(),
+            );
+          }}
+        >
           {WORKSPACE_TABS.map((item) => {
             const Icon = item.icon;
             return (
               <button
                 key={item.id}
+                id={`workspace-tab-${item.id}`}
                 type="button"
                 role="tab"
                 aria-selected={tab === item.id}
+                aria-controls={`workspace-panel-${item.id}`}
+                tabIndex={tab === item.id ? 0 : -1}
                 onClick={() => setTab(item.id)}
                 className={clsx("workspace-tab", tab === item.id && "workspace-tab-on")}
               >
@@ -504,6 +553,7 @@ function Shell() {
                   samples={tel.cpuSeries.values()}
                   height={20}
                   tone={cpuTone}
+                  label={t("Uso de CPU")}
                   className="mt-1"
                 />
               </div>
@@ -581,9 +631,9 @@ function Shell() {
               <div className="flex items-center gap-1">
                 <span className="w-[4.25rem] shrink-0 text-meta text-ink-500">{t("Modelos")}</span>
                 <button
-                  onClick={() => void pickModelsFolder()}
+                  onClick={() => void (modelsDir ? openModelsFolder() : pickModelsFolder())}
                   className="min-w-0 flex-1 cursor-pointer truncate text-left text-meta text-ink-200 hover:text-accent-300"
-                  title={modelsDir || "Elegir carpeta de modelos"}
+                  title={modelsDir ? "Abrir carpeta de modelos" : "Elegir carpeta de modelos"}
                 >
                   {modelsDir ? basename(modelsDir) : "Sin asignar"}
                 </button>
@@ -599,9 +649,17 @@ function Shell() {
               <div className="flex items-center gap-1">
                 <span className="w-[4.25rem] shrink-0 text-meta text-ink-500">{t("Binarios")}</span>
                 <button
-                  onClick={() => void pickLlamaFolder()}
+                  onClick={() =>
+                    void (config?.llamaDir ?? installed[0]?.dir
+                      ? openLlamaFolder()
+                      : pickLlamaFolder())
+                  }
                   className="min-w-0 flex-1 cursor-pointer truncate text-left text-meta text-ink-200 hover:text-accent-300"
-                  title={config?.llamaDir ?? installed[0]?.dir ?? "Elegir carpeta de llama.cpp"}
+                  title={
+                    config?.llamaDir ?? installed[0]?.dir
+                      ? "Abrir carpeta de llama.cpp"
+                      : "Elegir carpeta de llama.cpp"
+                  }
                 >
                   {config?.llamaDir ?? installed[0]?.dir
                     ? basename(config?.llamaDir ?? installed[0]?.dir ?? "")
@@ -646,7 +704,7 @@ function Shell() {
               <Globe2 size={12} className="text-ink-500" />
               {t("Idioma")}
             </span>
-            <div className="language-switch">
+            <div className="language-switch" role="group" aria-label={t("Idioma")}>
               <button
                 type="button"
                 onClick={() => changeLanguage("es")}
@@ -749,9 +807,17 @@ function Shell() {
         </aside>
 
         {/* --- Contenido: tres espacios de trabajo, una sola barra --- */}
-        <main className="flex min-h-0 min-w-0 flex-1 flex-col">
+        <main id="main" tabIndex={-1} className="flex min-h-0 min-w-0 flex-1 flex-col">
           <div className="min-h-0 flex-1 overflow-y-auto">
-            <div className="app-content mx-auto max-w-[68rem] space-y-5 px-6 py-5">
+            <div
+              id={`workspace-panel-${tab}`}
+              role="tabpanel"
+              aria-labelledby={`workspace-tab-${tab}`}
+              className={clsx(
+                "app-content mx-auto max-w-[68rem] px-6 py-5 outline-none",
+                tab === "models" ? "flex h-full min-h-0 flex-col" : "space-y-5",
+              )}
+            >
               {tab === "run" && (
                 <DeployView
                   config={config}
@@ -770,9 +836,7 @@ function Shell() {
               {tab === "models" && (
                 <ModelsView
                   modelsDir={modelsDir}
-                  selectedModel={selectedModel}
                   onUseModel={useModelForRun}
-                  onPickModelsFolder={() => void pickModelsFolder()}
                 />
               )}
               {tab === "runtime" && (

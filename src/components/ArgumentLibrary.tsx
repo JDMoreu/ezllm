@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import clsx from "clsx";
-import { Check, ChevronDown, ListFilter, Plus, Search, X } from "lucide-react";
+import { Check, ListFilter, Plus, Search, X } from "lucide-react";
 
 import { api } from "../lib/api";
 import { commandLine, flagValue, hasFlag, looksLikeValue, tokenizeArgs } from "../lib/args";
@@ -16,6 +16,12 @@ import {
 } from "../lib/argCatalog";
 import type { ArgHelp, ArgOption } from "../types";
 import { Button } from "./ui";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+} from "@/components/ui-kit/select";
 
 type Filter = ArgCategory | "Todas";
 
@@ -31,11 +37,9 @@ export default function ArgumentLibrary({
   const [loading, setLoading] = useState(true);
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<Filter>("Sugeridos");
-  const [filterOpen, setFilterOpen] = useState(false);
   const [limit, setLimit] = useState(60);
   const [editing, setEditing] = useState<string | null>(null);
   const [draftValue, setDraftValue] = useState("");
-  const filterRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     let alive = true;
@@ -58,22 +62,6 @@ export default function ArgumentLibrary({
   useEffect(() => {
     setLimit(60);
   }, [query, filter]);
-
-  useEffect(() => {
-    if (!filterOpen) return;
-    const onPointerDown = (event: PointerEvent) => {
-      if (!filterRef.current?.contains(event.target as Node)) setFilterOpen(false);
-    };
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") setFilterOpen(false);
-    };
-    document.addEventListener("pointerdown", onPointerDown);
-    document.addEventListener("keydown", onKeyDown);
-    return () => {
-      document.removeEventListener("pointerdown", onPointerDown);
-      document.removeEventListener("keydown", onKeyDown);
-    };
-  }, [filterOpen]);
 
   const options = help?.options.length ? help.options : FALLBACK_OPTIONS;
   const values = useMemo(() => tokenizeArgs(args).map((token) => token.value), [args]);
@@ -210,57 +198,41 @@ export default function ArgumentLibrary({
             )}
           </label>
 
-          <div className="arg-filter" ref={filterRef}>
-            <button
-              type="button"
-              className={clsx("arg-filter-btn", filterOpen && "arg-filter-btn-open")}
-              onClick={() => setFilterOpen((open) => !open)}
-              aria-haspopup="listbox"
-              aria-expanded={filterOpen}
+          {/* Selector en forma de lista: una fila por categoría con su
+              conteo. El panel lo estiliza ui-kit/select, no esta vista. */}
+          <Select
+            value={filter}
+            onValueChange={(value) => {
+              setFilter(value as Filter);
+              setQuery("");
+            }}
+          >
+            {/* Botón real: marco, superficie y foco de acento al abrirse.
+                Sin conteo y más corto, pero se lee como un control. */}
+            <SelectTrigger
+              className="w-[9rem]"
               aria-label={`${t("Categoría")}: ${t(currentCategory?.label ?? "Sugeridos")}`}
             >
               <ListFilter size={13} aria-hidden />
-              <span className="arg-filter-name">{t(currentCategory?.label ?? "Sugeridos")}</span>
-              <span className="arg-filter-count">{currentCategory?.count ?? 0}</span>
-              <ChevronDown
-                size={13}
-                className={clsx("arg-filter-chevron", filterOpen && "arg-filter-chevron-open")}
-                aria-hidden
-              />
-            </button>
-
-            {filterOpen && (
-              <div className="arg-filter-menu">
-                <p className="arg-filter-title">{t("Categoría")}</p>
-                <div role="listbox" aria-label="Categorías de argumentos">
-                  {categories.map((item) => {
-                    const selected = filter === item.category;
-                    return (
-                      <button
-                        key={item.category}
-                        type="button"
-                        role="option"
-                        aria-selected={selected}
-                        className={clsx("arg-filter-option", selected && "arg-filter-option-on")}
-                        onClick={() => {
-                          setFilter(item.category);
-                          setQuery("");
-                          setFilterOpen(false);
-                          setLimit(60);
-                        }}
-                      >
-                        <span className="arg-filter-check">
-                          {selected && <Check size={11} />}
-                        </span>
-                        <span className="arg-filter-option-name">{t(item.label)}</span>
-                        <span className="arg-filter-option-count">{item.count}</span>
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-            )}
-          </div>
+              <span className="min-w-0 flex-1 truncate text-left">
+                {t(currentCategory?.label ?? "Sugeridos")}
+              </span>
+            </SelectTrigger>
+            {/* El panel mide exactamente lo que el disparador: la lista de
+                categorías es corta y un panel más ancho la estiraba. */}
+            <SelectContent
+              position="popper"
+              align="start"
+              sideOffset={0}
+              className="w-(--radix-select-trigger-width) min-w-0"
+            >
+              {categories.map((item) => (
+                <SelectItem key={item.category} value={item.category}>
+                  {t(item.label)}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </div>
       </header>
 

@@ -1,31 +1,42 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import { type CSSProperties, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import clsx from "clsx";
 import {
   AlertTriangle,
+  ArrowLeft,
+  ArrowUpDown,
+  Boxes,
   Check,
   Download,
   ExternalLink,
-  FolderOpen,
-  HardDrive,
   Heart,
-  RefreshCw,
   Search,
 } from "lucide-react";
 
 import { api, onHfDownloadProgress } from "../lib/api";
 import { Button, useToast } from "../components/ui";
-import { basename, formatBytes, formatParams, formatSpeed } from "../lib/format";
+import { Progress } from "@/components/ui-kit/progress";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+} from "@/components/ui-kit/select";
+import { basename, formatBytes, formatSpeed } from "../lib/format";
 import { t } from "../lib/i18n";
 import type {
-  CatalogEntry,
-  CatalogView,
   HfModelDetail,
   HfModelSummary,
   HfQuant,
 } from "../types";
 
-type Mode = "hub" | "local";
 type Sort = "downloads" | "likes" | "lastModified";
+
+/** Orden de resultados. Etiqueta corta a la vista y nombre completo al pasar. */
+const SORTS: { value: Sort; label: string; title: string }[] = [
+  { value: "downloads", label: "Descargas", title: "Más descargados" },
+  { value: "likes", label: "Likes", title: "Mejor valorados" },
+  { value: "lastModified", label: "Recientes", title: "Más recientes" },
+];
 
 const SUGGESTIONS = ["Qwen3", "Gemma 3", "Llama 3.1", "DeepSeek R1", "Mistral Small"];
 
@@ -42,17 +53,12 @@ interface ActiveDownload {
 
 export default function ModelsView({
   modelsDir,
-  selectedModel,
   onUseModel,
-  onPickModelsFolder,
 }: {
   modelsDir: string;
-  selectedModel: string | null;
   onUseModel: (model: string, mmproj: string | null, draft: string | null) => void;
-  onPickModelsFolder: () => void;
 }) {
   const toast = useToast();
-  const [mode, setMode] = useState<Mode>("hub");
 
   const [query, setQuery] = useState("");
   const [sort, setSort] = useState<Sort>("downloads");
@@ -74,32 +80,21 @@ export default function ModelsView({
   const [downloaded, setDownloaded] = useState<Record<string, string>>({});
   const [using, setUsing] = useState<string | null>(null);
 
-  const [catalog, setCatalog] = useState<CatalogView | null>(null);
-  const [catalogLoading, setCatalogLoading] = useState(false);
-  const [catalogError, setCatalogError] = useState<string | null>(null);
-  const [localQuery, setLocalQuery] = useState("");
+  const [narrow, setNarrow] = useState(() => window.innerWidth < 1200);
+  const [narrowDetail, setNarrowDetail] = useState(false);
+  const rootRef = useRef<HTMLDivElement>(null);
 
   const selectedDetail = selectedId ? details[selectedId] ?? null : null;
 
-  const loadLocal = useCallback(async () => {
-    if (!modelsDir) {
-      setCatalog(null);
-      return;
-    }
-    setCatalogLoading(true);
-    setCatalogError(null);
-    try {
-      setCatalog(await api.scanModels(modelsDir));
-    } catch (error) {
-      setCatalogError(String(error));
-    } finally {
-      setCatalogLoading(false);
-    }
-  }, [modelsDir]);
-
   useEffect(() => {
-    void loadLocal();
-  }, [loadLocal]);
+    const element = rootRef.current;
+    if (!element) return;
+    const update = () => setNarrow(element.clientWidth < 900);
+    update();
+    const observer = new ResizeObserver(update);
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, []);
 
   useEffect(() => {
     if (!selectedId || details[selectedId]) return;
@@ -144,6 +139,7 @@ export default function ModelsView({
     setFeaturedLoading(true);
     setSearchError(null);
     setSelectedId(null);
+    setNarrowDetail(false);
     setDetailError(null);
     setSearchedFor("");
     try {
@@ -181,6 +177,7 @@ export default function ModelsView({
       setSearchError(null);
       setSearchedFor(value);
       setSelectedId(null);
+      setNarrowDetail(false);
       setDetailError(null);
       try {
         const found = await api.hfSearch(value, nextSort, 30);
@@ -241,7 +238,6 @@ export default function ModelsView({
         [key]: result.modelPath ?? "",
       }));
       toast.push(`${quant.label} descargado`, "success");
-      void loadLocal();
     } catch (error) {
       toast.push(`No se pudo descargar ${quant.label}: ${String(error)}`, "danger");
     } finally {
@@ -249,101 +245,144 @@ export default function ModelsView({
     }
   }
 
-  const filteredLocal = useMemo(() => {
-    const entries = catalog?.entries ?? [];
-    const needle = localQuery.trim().toLowerCase();
-    return entries
-      .filter((entry) => {
-        if (!needle) return true;
-        return [entry.name, entry.fileName, entry.quant, entry.arch]
-          .filter(Boolean)
-          .some((value) => value.toLowerCase().includes(needle));
-      })
-      .sort((a, b) => {
-        const order = roleOrder(a.role) - roleOrder(b.role);
-        return order || a.fileName.localeCompare(b.fileName);
-      });
-  }, [catalog, localQuery]);
+
+  const currentSort = SORTS.find((option) => option.value === sort) ?? SORTS[0];
+
+  // El buscador y el orden viven en la cabecera del contenedor. El título de
+  // la izquierda cierra el hueco y da nombre al bloque.
+  const searchBar = (
+    <form
+      className="model-searchbar shrink-0"
+      onSubmit={(event) => {
+        event.preventDefault();
+        void runSearch(query);
+      }}
+    >
+      <p className="model-searchbar-title mr-auto flex items-center gap-1.5">
+        <Boxes size={13} aria-hidden />
+        {t("Explora modelos")}
+      </p>
+      <label className="model-search-field">
+        <Search size={15} className="shrink-0 text-ink-500" aria-hidden />
+        <input
+          value={query}
+          onChange={(event) => setQuery(event.target.value)}
+          // Enter busca. Sin botón, esta es la única forma: se deja
+          // explícita para no depender del envío implícito del form.
+          onKeyDown={(event) => {
+            if (event.key !== "Enter") return;
+            event.preventDefault();
+            void runSearch(query);
+          }}
+          placeholder={t("Busca un GGUF: Qwen3, Gemma 3, DeepSeek…")}
+          spellCheck={false}
+          aria-label="Buscar modelos GGUF en Hugging Face"
+        />
+      </label>
+      <div className="model-search-actions">
+        <Select
+          value={sort}
+          onValueChange={(value) => {
+            const next = value as Sort;
+            setSort(next);
+            if (searchedFor) void runSearch(searchedFor, next);
+            else void loadFeatured(next);
+          }}
+        >
+          <SelectTrigger
+            className="w-[8.75rem]"
+            aria-label={t("Ordenar resultados")}
+            title={t(currentSort.title)}
+          >
+            <ArrowUpDown size={13} aria-hidden />
+            <span className="min-w-0 flex-1 truncate text-left">{t(currentSort.label)}</span>
+          </SelectTrigger>
+          <SelectContent
+            position="popper"
+            align="start"
+            sideOffset={0}
+            className="w-(--radix-select-trigger-width) min-w-0"
+          >
+            {SORTS.map((option) => (
+              <SelectItem key={option.value} value={option.value} title={t(option.title)}>
+                {t(option.label)}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+
+      </div>
+    </form>
+  );
 
   return (
-    <div className="space-y-4">
-      <header className="flex flex-wrap items-center justify-between gap-3">
-        <p className="text-body leading-relaxed text-ink-500">
-          {t("Explora GGUF en Hugging Face y elige un modelo para el servidor.")}
-        </p>
-        <div className="model-tabs" role="tablist" aria-label="Origen de modelos">
-          <button
-            type="button"
-            role="tab"
-            aria-selected={mode === "hub"}
-            onClick={() => setMode("hub")}
-            className={clsx("model-tab", mode === "hub" && "model-tab-on")}
-          >
-            Hugging Face
-          </button>
-          <button
-            type="button"
-            role="tab"
-            aria-selected={mode === "local"}
-            onClick={() => setMode("local")}
-            className={clsx("model-tab", mode === "local" && "model-tab-on")}
-          >
-            Local
-            {catalog && catalog.primary.length > 0 && <span>{catalog.primary.length}</span>}
-          </button>
-        </div>
-      </header>
-
-      {mode === "hub" ? (
-        <section className="model-browser" aria-label="Modelos de Hugging Face">
-          <form
-            className="model-searchbar"
-            onSubmit={(event) => {
-              event.preventDefault();
-              void runSearch(query);
-            }}
-          >
-            <label className="model-search-field">
-              <Search size={15} className="shrink-0 text-ink-500" aria-hidden />
-              <input
-                value={query}
-                onChange={(event) => setQuery(event.target.value)}
-                placeholder={t("Busca un GGUF: Qwen3, Gemma 3, DeepSeek…")}
-                spellCheck={false}
-                aria-label="Buscar modelos GGUF en Hugging Face"
-              />
-            </label>
-            <select
-              value={sort}
-              onChange={(event) => {
-                const next = event.target.value as Sort;
-                setSort(next);
-                if (searchedFor) void runSearch(searchedFor, next);
-                else void loadFeatured(next);
+    <div ref={rootRef} className="flex h-full min-h-0 flex-col gap-4">
+      {activeDownload && (
+        <div className="model-download-strip">
+          <span className="sr-only" role="status">
+            {`Descargando ${repoName(activeDownload.repo)} · ${activeDownload.phase}`}
+          </span>
+          <div className="flex min-w-0 flex-1 items-center gap-2.5">
+            <Download size={14} className="shrink-0 text-accent-300" aria-hidden />
+            <div className="min-w-0">
+              <p className="truncate text-label font-medium text-ink-200">
+                {repoName(activeDownload.repo)}{" "}
+                <span className="mono text-meta text-ink-500">· {activeDownload.quantId}</span>
+              </p>
+              <p className="truncate text-meta text-ink-500">
+                {activeDownload.phase}
+                {activeDownload.file && ` · ${basename(activeDownload.file)}`}
+                {activeDownload.fileCount > 0 &&
+                  ` (${activeDownload.fileIndex}/${activeDownload.fileCount})`}
+              </p>
+            </div>
+          </div>
+          <div className="flex shrink-0 items-center gap-3">
+            <span className="mono text-meta text-ink-500">
+              {formatSpeed(activeDownload.speed)}
+            </span>
+            <Progress
+              value={Math.min(100, activeDownload.percent)}
+              className="h-1.5 w-40"
+              aria-label="Progreso de descarga"
+            />
+            <span className="mono w-9 text-right text-meta text-ink-200">
+              {Math.round(activeDownload.percent)}%
+            </span>
+            <Button
+              size="sm"
+              variant="quiet"
+              onClick={() => {
+                setSelectedId(activeDownload.repo);
+                if (narrow) setNarrowDetail(true);
               }}
-              className="field model-sort"
-              aria-label="Ordenar resultados"
             >
-              <option value="downloads">{t("Más descargados")}</option>
-              <option value="likes">{t("Mejor valorados")}</option>
-              <option value="lastModified">{t("Más recientes")}</option>
-            </select>
-            <Button type="submit" variant="primary" loading={searching}>
-              {t("Buscar")}
+              {t("Ver")}
             </Button>
-          </form>
+          </div>
+        </div>
+      )}
+
+        <section
+          className="model-browser flex min-h-0 flex-1 flex-col"
+          aria-label="Modelos de Hugging Face"
+        >
+          {/* Cabecera única del contenedor: buscador y orden, a la derecha. */}
+          {searchBar}
 
           <div
             className={clsx(
-              "model-split",
+              "model-split min-h-0 flex-1",
               !results.length &&
                 !searching &&
                 !featuredLoading &&
                 !selectedId &&
                 "model-split-idle",
+              narrow && "model-split-narrow",
             )}
           >
-            <div className="model-results">
+            {(!narrow || !narrowDetail) && (
+              <div className="model-results">
               <div className="model-results-head">
                 <span>
                   {searchedFor
@@ -380,11 +419,13 @@ export default function ModelsView({
                         onClick={() => {
                           setSelectedId(model.id);
                           setDetailError(null);
+                          if (narrow) setNarrowDetail(true);
                         }}
                         className={clsx(
                           "model-result",
                           selectedId === model.id && "model-result-on",
                         )}
+                        aria-current={selectedId === model.id ? "true" : undefined}
                         title={model.id}
                       >
                         <div className="flex min-w-0 items-start gap-2">
@@ -395,15 +436,28 @@ export default function ModelsView({
                           {model.gated && <span className="chip chip-warn">Gated</span>}
                         </div>
                         <div className="model-result-meta">
-                          <span>
-                            <Download size={10} />
+                          <span
+                            aria-label={`${formatCount(model.downloads)} descargas`}
+                            title={`${formatCount(model.downloads)} descargas`}
+                          >
+                            <Download size={10} aria-hidden />
                             {formatCount(model.downloads)}
                           </span>
-                          <span>
-                            <Heart size={10} />
+                          <span
+                            aria-label={`${formatCount(model.likes)} me gusta`}
+                            title={`${formatCount(model.likes)} me gusta`}
+                          >
+                            <Heart size={10} aria-hidden />
                             {formatCount(model.likes)}
                           </span>
-                          {model.lastModified && <span>{formatDate(model.lastModified)}</span>}
+                          {model.lastModified && (
+                            <span
+                              aria-label={`Actualizado ${formatDate(model.lastModified)}`}
+                              title={`Actualizado ${formatDate(model.lastModified)}`}
+                            >
+                              {formatDate(model.lastModified)}
+                            </span>
+                          )}
                         </div>
                       </button>
                     </li>
@@ -414,17 +468,14 @@ export default function ModelsView({
                   <p>{t("No hay modelos GGUF para")} “{searchedFor}”. {t("Prueba otra búsqueda.")}</p>
                 </div>
               ) : (
-                <div className="model-idle">
-                  <p className="text-body font-medium text-ink-200">No hay populares ahora</p>
-                  <p className="mt-1 text-label leading-relaxed text-ink-500">
-                    Escribe un modelo o empieza por una de estas búsquedas.
-                  </p>
-                  <div className="mt-3 flex flex-wrap gap-1.5">
+                <div className="model-empty">
+                  <p>{t("Prueba con un nombre conocido")}</p>
+                  <div className="mt-1 flex flex-wrap gap-1.5">
                     {SUGGESTIONS.map((suggestion) => (
                       <button
                         key={suggestion}
                         type="button"
-                        className="quick-search"
+                        className="chip chip-action"
                         onClick={() => {
                           setQuery(suggestion);
                           void runSearch(suggestion);
@@ -436,9 +487,24 @@ export default function ModelsView({
                   </div>
                 </div>
               )}
-            </div>
+              </div>
+            )}
 
-            <div className="model-detail">
+            {(!narrow || narrowDetail) && (
+              <div className="model-detail">
+              {narrow && selectedId && (
+                <div className="model-detail-back">
+                  <Button
+                    size="sm"
+                    variant="quiet"
+                    icon={<ArrowLeft size={13} />}
+                    onClick={() => setNarrowDetail(false)}
+                  >
+                    {t("Resultados")}
+                    {results.length > 0 && ` (${results.length})`}
+                  </Button>
+                </div>
+              )}
               {!selectedId ? (
                 <div className="model-empty">
                   <p className="text-body font-medium text-ink-200">{t("Detalle del modelo")}</p>
@@ -473,107 +539,10 @@ export default function ModelsView({
                   onUse={(path) => void useModel(path)}
                 />
               ) : null}
-            </div>
-          </div>
-        </section>
-      ) : (
-        <section className="model-browser" aria-label="Modelos instalados">
-          <div className="local-bar">
-            <div className="min-w-0">
-              <p className="flex items-center gap-1.5 text-label font-medium text-ink-200">
-                <HardDrive size={13} className="text-ink-500" />
-                {modelsDir ? basename(modelsDir) : "Sin carpeta de modelos"}
-              </p>
-              <p className="mt-0.5 truncate text-meta text-ink-500" title={modelsDir}>
-                {modelsDir || "Elige una carpeta para escanear modelos GGUF."}
-              </p>
-            </div>
-            <div className="flex items-center gap-2">
-              <Button
-                size="sm"
-                variant="ghost"
-                icon={<FolderOpen size={13} />}
-                onClick={onPickModelsFolder}
-              >
-                {t("Cambiar carpeta")}
-              </Button>
-              <Button
-                size="sm"
-                variant="quiet"
-                icon={<RefreshCw size={13} className={catalogLoading ? "animate-spin" : ""} />}
-                onClick={() => void loadLocal()}
-                disabled={!modelsDir || catalogLoading}
-              >
-                {t("Actualizar")}
-              </Button>
-            </div>
-          </div>
-
-          <div className="local-toolbar">
-            <label className="model-search-field">
-              <Search size={14} className="shrink-0 text-ink-500" aria-hidden />
-              <input
-                value={localQuery}
-                onChange={(event) => setLocalQuery(event.target.value)}
-                placeholder={t("Filtrar modelos instalados…")}
-                aria-label="Filtrar modelos instalados"
-                spellCheck={false}
-              />
-            </label>
-            <span className="text-meta text-ink-500">
-              {catalogLoading
-                ? "Escaneando…"
-                : `${filteredLocal.length} de ${catalog?.entries.length ?? 0} archivos`}
-            </span>
-          </div>
-
-          {catalogError ? (
-            <div className="model-empty" role="alert">
-              <AlertTriangle size={16} className="text-warn-400" />
-              <p>{catalogError}</p>
-            </div>
-          ) : catalogLoading && !catalog ? (
-            <div className="space-y-2 p-3">
-              {Array.from({ length: 5 }).map((_, index) => (
-                <div key={index} className="skeleton h-14" />
-              ))}
-            </div>
-          ) : filteredLocal.length > 0 ? (
-            <ul className="local-list">
-              {filteredLocal.map((entry) => (
-                <LocalRow
-                  key={entry.path}
-                  entry={entry}
-                  selected={selectedModel === entry.path}
-                  using={using === entry.path}
-                  onUse={() => void useModel(entry.path)}
-                />
-              ))}
-            </ul>
-          ) : (
-            <div className="model-empty">
-              <p className="text-body font-medium text-ink-200">
-                {modelsDir ? t("No hay archivos GGUF aquí") : t("Elige una carpeta de modelos")}
-              </p>
-              <p className="mt-1 text-label text-ink-500">
-                {modelsDir
-                  ? t("Descarga uno desde Hugging Face o elige otra carpeta.")
-                  : "EzLLM escanea la carpeta de forma recursiva."}
-              </p>
-              <div className="mt-3 flex flex-wrap gap-2">
-                {!modelsDir && (
-                  <Button size="sm" variant="primary" onClick={onPickModelsFolder}>
-                    Elegir carpeta
-                  </Button>
-                )}
-                <Button size="sm" variant="ghost" onClick={() => setMode("hub")}>
-                  {t("Buscar en Hugging Face")}
-                </Button>
               </div>
-            </div>
-          )}
+            )}
+          </div>
         </section>
-      )}
     </div>
   );
 }
@@ -718,9 +687,8 @@ function Detail({
       )}
 
       <p className="mt-5 border-t border-base-800 pt-3 text-meta leading-relaxed text-ink-500">
-        Los archivos se guardan en{" "}
-        <span className="mono text-ink-400">{modelsDir || "la carpeta de modelos"}</span>.
-        {" "}Puedes usar el modelo descargado desde la pestaña Local.
+        {t("Los archivos se guardan en")}{" "}
+        <span className="mono text-ink-400">{modelsDir || t("la carpeta de modelos")}</span>.
       </p>
     </div>
   );
@@ -773,7 +741,11 @@ function QuantGroup({
                 </span>
                 {quant.incomplete && <span className="chip chip-warn">Incompleto</span>}
                 {quant.sharded && <span className="chip">{quant.files.length} archivos</span>}
-                {quantNote(quant.quant) && <span className="chip">{quantNote(quant.quant)}</span>}
+                {quantNote(quant.quant) && (
+                  <span className="chip" title={quantNoteDetail(quant.quant)}>
+                    {quantNote(quant.quant)}
+                  </span>
+                )}
               </div>
               <p className="mt-0.5 truncate text-meta text-ink-500">
                 {formatBytes(quant.size)}
@@ -845,61 +817,6 @@ function QuantGroup({
   );
 }
 
-function LocalRow({
-  entry,
-  selected,
-  using,
-  onUse,
-}: {
-  entry: CatalogEntry;
-  selected: boolean;
-  using: boolean;
-  onUse: () => void;
-}) {
-  const isPrimary = entry.role === "primary";
-  return (
-    <li className={clsx("local-row", selected && "local-row-on")}>
-      <div className="min-w-0 flex-1">
-        <div className="flex flex-wrap items-center gap-2">
-          <span className={clsx("role-mark", isPrimary ? "role-mark-primary" : "role-mark-alt")}>
-            {roleLabel(entry.role)}
-          </span>
-          <p className="truncate text-body font-medium text-ink-100" title={entry.name || entry.fileName}>
-            {entry.name || entry.fileName}
-          </p>
-          {entry.error && <span className="chip chip-warn">Lectura parcial</span>}
-        </div>
-        <p className="mt-0.5 truncate font-mono text-meta text-ink-500" title={entry.path}>
-          {entry.fileName}
-        </p>
-        <p className="mt-0.5 flex flex-wrap gap-x-2 gap-y-0.5 text-meta text-ink-400">
-          {entry.quant && <span>{entry.quant}</span>}
-          {entry.arch && <span>{entry.arch}</span>}
-          {entry.nParamsEst > 0 && <span>{formatParams(entry.nParamsEst)}</span>}
-          {entry.contextLength > 0 && <span>{formatContext(entry.contextLength)}</span>}
-          {entry.nLayers > 0 && <span>{entry.nLayers} {t("capas")}</span>}
-        </p>
-        {entry.error && <p className="mt-1 text-meta text-warn-400">{entry.error}</p>}
-      </div>
-
-      <div className="flex shrink-0 items-center gap-3">
-        <span className="mono text-label text-ink-300">{formatBytes(entry.sizeBytes)}</span>
-        {isPrimary &&
-          (selected ? (
-            <span className="flex items-center gap-1 text-label font-medium text-accent-300">
-              <Check size={13} />
-              {t("En uso")}
-            </span>
-          ) : (
-            <Button size="sm" variant="ghost" loading={using} onClick={onUse}>
-              {t("Usar")}
-            </Button>
-          ))}
-      </div>
-    </li>
-  );
-}
-
 function Metric({ label, value }: { label: string; value: string }) {
   return (
     <div>
@@ -917,33 +834,31 @@ function downloadKey(repo: string, quant: string): string {
   return `${repo}::${quant}`;
 }
 
-function roleLabel(role: string): string {
-  switch (role) {
-    case "primary":
-      return "Modelo";
-    case "mmproj":
-      return "Proyector";
-    case "draft":
-      return "Draft";
-    default:
-      return role;
-  }
-}
-
-function roleOrder(role: string): number {
-  return role === "primary" ? 0 : role === "mmproj" ? 1 : 2;
-}
-
+/** Etiqueta corta para la píldora: una línea, sin alargar la fila. */
 function quantNote(quant: string): string {
   const value = quant.toUpperCase();
-  if (value.startsWith("IQ1") || value.startsWith("Q2")) return "Mínimo";
-  if (value.startsWith("IQ2") || value.startsWith("Q3")) return "Bajo";
-  if (value === "Q4_0" || value === "Q4_1") return "Rápido";
-  if (value.startsWith("Q4")) return "Equilibrado";
-  if (value.startsWith("Q5")) return "Alta calidad";
-  if (value.startsWith("Q6")) return "Casi fiel";
-  if (value.startsWith("Q8")) return "Prácticamente fiel";
-  if (value === "F16" || value === "BF16" || value === "FP16") return "Original";
+  if (value.startsWith("IQ1") || value.startsWith("Q2")) return t("Mínima");
+  if (value.startsWith("IQ2") || value.startsWith("Q3")) return t("Baja");
+  if (value === "Q4_0" || value === "Q4_1") return t("Rápida");
+  if (value.startsWith("Q4")) return t("Equilibrada");
+  if (value.startsWith("Q5")) return t("Alta");
+  if (value.startsWith("Q6")) return t("Muy alta");
+  if (value.startsWith("Q8")) return t("Casi exacta");
+  if (value === "F16" || value === "BF16" || value === "FP16") return t("Exacta");
+  return "";
+}
+
+/** La explicación larga vive en el tooltip, no dentro de la píldora. */
+function quantNoteDetail(quant: string): string {
+  const value = quant.toUpperCase();
+  if (value.startsWith("IQ1") || value.startsWith("Q2")) return t("Ocupa muy poco y pierde bastante calidad.");
+  if (value.startsWith("IQ2") || value.startsWith("Q3")) return t("Ocupa poco y pierde algo de calidad.");
+  if (value === "Q4_0" || value === "Q4_1") return t("Rápida de generar, con más pérdida que Q4_K.");
+  if (value.startsWith("Q4")) return t("Buen equilibrio entre tamaño y calidad.");
+  if (value.startsWith("Q5")) return t("Alta calidad con poco más de tamaño.");
+  if (value.startsWith("Q6")) return t("Calidad muy alta; apenas se nota la compresión.");
+  if (value.startsWith("Q8")) return t("Casi idéntica al modelo original.");
+  if (value === "F16" || value === "BF16" || value === "FP16") return t("El modelo original, sin comprimir.");
   return "";
 }
 

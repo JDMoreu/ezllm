@@ -19,6 +19,7 @@ export function Sparkline({
   tone,
   min,
   max,
+  label,
   className,
 }: {
   samples: Sample[];
@@ -26,6 +27,7 @@ export function Sparkline({
   tone?: "accent" | "warn" | "danger";
   min?: number;
   max?: number;
+  label?: string;
   className?: string;
 }) {
   const path = useMemo(() => {
@@ -92,7 +94,9 @@ export function Sparkline({
       preserveAspectRatio="none"
       style={{ height }}
       role="img"
-      aria-label={`Serie de ${samples.length} muestras`}
+      aria-label={
+        label ? `${label} · ${samples.length} muestras` : `Serie de ${samples.length} muestras`
+      }
     >
       <path className="spark-area" d={path.area} />
       <path className="spark-line" d={path.line} />

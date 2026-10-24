@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { createPortal } from "react-dom";
 import clsx from "clsx";
 import {
   AlertTriangle,
   Check,
+  ChevronDown,
   Copy,
   FilePlus,
   FolderOpen,
@@ -24,6 +24,19 @@ import { commandLine, composeFlags } from "../lib/args";
 import { basename } from "../lib/format";
 import { t } from "../lib/i18n";
 import { Button, ConfirmDialog, PromptDialog, useToast } from "./ui";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui-kit/dialog";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui-kit/dropdown-menu";
 import type { AppConfig, Deployment, ModelRole, ServerStatus } from "../types";
 
 type PromptMode = "save-as" | "import" | null;
@@ -53,7 +66,6 @@ export default function ExecutionPanel({
   selectedDraft,
   args,
   argsError,
-  tokens,
   memoryLabel,
   onArgsChange,
   onSelect,
@@ -326,46 +338,60 @@ export default function ExecutionPanel({
             onClick={() => setLoadOpen(true)}
             disabled={presetBusy}
             aria-haspopup="dialog"
-            aria-label={t("Configuraciones guardadas")}
-            title={t("Configuraciones guardadas")}
+            aria-label={`${t("Configuraciones guardadas")} (${deployments.length})`}
+            title={`${t("Configuraciones guardadas")} (${deployments.length})`}
           >
             <Settings size={13} />
+            {deployments.length > 0 && (
+              <span className="config-count" aria-hidden>
+                {deployments.length}
+              </span>
+            )}
           </button>
           <span className="execution-config-name" title={active?.name}>
             {active ? `${active.name}${dirty ? ` · ${t("modificada")}` : ""}` : t("Sin guardar")}
           </span>
         </div>
         <div className="execution-config-actions">
-          <button
-            type="button"
-            className="config-action"
+          <Button
+            size="sm"
+            variant="quiet"
+            icon={<Save size={12} />}
             onClick={saveActive}
             disabled={presetBusy}
             title={t("Guardar")}
           >
-            <Save size={12} />
             {t("Guardar")}
-          </button>
-          <button
-            type="button"
-            className="config-action"
-            onClick={() => setPromptMode("save-as")}
-            disabled={presetBusy}
-            title={t("Guardar como")}
-          >
-            <FilePlus size={12} />
-            {t("Guardar como")}
-          </button>
-          <button
-            type="button"
-            className="config-action"
-            onClick={() => void pickImport()}
-            disabled={presetBusy}
-            title={t("Cargar configuración desde un archivo")}
-          >
-            <Upload size={12} />
-            {t("Cargar")}
-          </button>
+          </Button>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button
+                type="button"
+                className="btn btn-quiet h-full px-2"
+                disabled={presetBusy}
+                aria-label={t("Más opciones de guardado")}
+                title={t("Más opciones de guardado")}
+              >
+                <ChevronDown size={12} />
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent
+              align="end"
+              className="border border-base-700 bg-base-900 text-ink-200 shadow-float"
+            >
+              <DropdownMenuItem
+                className="text-label"
+                onSelect={() => setPromptMode("save-as")}
+              >
+                <FilePlus size={12} />
+                {t("Guardar como…")}
+              </DropdownMenuItem>
+              <DropdownMenuItem className="text-label" onSelect={() => void pickImport()}>
+                <Upload size={12} />
+                {t("Importar archivo…")}
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
       </div>
 
@@ -380,6 +406,7 @@ export default function ExecutionPanel({
                 type="button"
                 className="execution-model-value"
                 onClick={() => void onPickModel(slot)}
+                aria-label={`${t(label)}: ${value ? basename(value) : t("Elegir…")}`}
                 title={value ?? `Elegir ${label.toLowerCase()}`}
               >
                 {value ? basename(value) : t("Elegir…")}
@@ -423,27 +450,6 @@ export default function ExecutionPanel({
       )}
 
       <div className="execution-command">
-        <div className="execution-command-head">
-          <span className="execution-label">
-            <Terminal size={12} />
-            {t("Comando")}
-          </span>
-          <Button
-            size="sm"
-            variant={server?.running ? "danger" : "primary"}
-            loading={serverBusy}
-            icon={server?.running ? <Square size={11} /> : <Play size={11} />}
-            onClick={() => void (server?.running ? onStop() : onStart())}
-          >
-            {serverBusy
-              ? server?.running
-                ? t("Deteniendo…")
-                : t("Iniciando…")
-              : server?.running
-                ? t("Detener")
-                : t("Iniciar modelo")}
-          </Button>
-        </div>
         <div
           className={clsx(
             "execution-command-shell",
@@ -468,38 +474,53 @@ export default function ExecutionPanel({
             onChange={(event) => onArgsChange(event.target.value)}
             placeholder="--jinja -c 32768 -ngl 99 -fa on"
             spellCheck={false}
-            rows={4}
+            rows={3}
             aria-label="Comando de llama-server"
             aria-invalid={!!argsError}
             aria-describedby={argsError ? "command-error" : undefined}
           />
         </div>
-        <div className="execution-command-foot">
-          {argsError ? (
-            <p
-              id="command-error"
-              role="alert"
-              className="flex items-start gap-1.5 text-label leading-relaxed text-danger-400"
-            >
-              <AlertTriangle size={13} className="mt-0.5 shrink-0" />
-              {argsError}
-            </p>
-          ) : (
-            <p className="text-label leading-relaxed text-ink-500">
-              {t("Edita los flags. La biblioteca los añade a este mismo comando.")}
-            </p>
-          )}
-          <span className="mono shrink-0 text-meta text-ink-500">{tokens} {t("tokens")}</span>
-        </div>
-        {memoryLabel && (
-          <div className="execution-memory">
+        {argsError && (
+          <p
+            id="command-error"
+            role="alert"
+            className="mt-1.5 flex items-start gap-1.5 text-label leading-relaxed text-danger-400"
+          >
+            <AlertTriangle size={13} className="mt-0.5 shrink-0" />
+            {argsError}
+          </p>
+        )}
+        {server?.running && (
+          <p className="mt-1 flex items-center gap-1.5 text-meta text-warn-400">
+            <AlertTriangle size={12} className="shrink-0" aria-hidden />
+            {t("Los cambios se aplican al reiniciar el servidor.")}
+          </p>
+        )}
+        <div className="execution-memory">
+          {memoryLabel && (
             <span className="flex items-center gap-1.5 text-label text-ink-400">
               <MemoryStick size={12} />
               {t("Memoria estimada")}
+              <span className="mono text-label text-ink-200">{memoryLabel}</span>
             </span>
-            <span className="mono text-label text-ink-200">{memoryLabel}</span>
-          </div>
-        )}
+          )}
+          <Button
+            className="ml-auto"
+            size="sm"
+            variant={server?.running ? "danger" : "primary"}
+            loading={serverBusy}
+            icon={server?.running ? <Square size={11} /> : <Play size={11} />}
+            onClick={() => void (server?.running ? onStop() : onStart())}
+          >
+            {serverBusy
+              ? server?.running
+                ? t("Deteniendo…")
+                : t("Iniciando…")
+              : server?.running
+                ? t("Detener")
+                : t("Iniciar modelo")}
+          </Button>
+        </div>
       </div>
 
       {showLog && (
@@ -538,113 +559,102 @@ export default function ExecutionPanel({
         </div>
       )}
 
-      {loadOpen &&
-        createPortal(
-          <div
-            className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-[2px]"
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="load-config-title"
-            onMouseDown={(event) => {
-              if (event.target === event.currentTarget) setLoadOpen(false);
-            }}
-          >
-            <div className="card w-full max-w-2xl overflow-hidden shadow-float">
-              <header className="flex items-start justify-between gap-4 border-b border-base-800 px-4 py-3">
-                <div>
-                  <h2
-                    id="load-config-title"
-                    className="text-[0.8125rem] font-semibold text-ink-100"
-                  >
-                    {t("Configuraciones guardadas")}
-                  </h2>
-                  <p className="mt-0.5 text-meta text-ink-500">
-                    {t("Aplica una configuración al comando actual.")}
-                  </p>
-                </div>
-                <button
-                  type="button"
-                  className="btn-quiet -m-1 p-1 text-ink-500 hover:text-ink-200"
-                  onClick={() => setLoadOpen(false)}
-                  aria-label={t("Cerrar")}
-                >
-                  <X size={14} />
-                </button>
-              </header>
-
-              <div className="max-h-[min(60vh,28rem)] overflow-y-auto p-2">
-                {deployments.length === 0 ? (
-                  <p className="px-3 py-8 text-center text-label text-ink-500">
-                    {t("Todavía no hay configuraciones guardadas.")}
-                  </p>
-                ) : (
-                  deployments.map((deployment) => {
-                    const selected = deployment.id === config.activeDeploymentId;
-                    return (
-                      <div
-                        key={deployment.id}
-                        className={clsx("config-row", selected && "config-row-on")}
-                      >
-                        <button
-                          type="button"
-                          className="config-row-main"
-                          onClick={() => void apply(deployment)}
-                          title={deployment.name}
-                        >
-                          <span className="config-row-check">
-                            {selected && <Check size={13} />}
-                          </span>
-                          <span className="config-row-copy">
-                            <span className="config-row-name">{deployment.name}</span>
-                            <span className="config-row-model">
-                              {deployment.modelPath
-                                ? basename(deployment.modelPath)
-                                : t("Sin modelo")}
-                            </span>
-                          </span>
-                        </button>
-                        <button
-                          type="button"
-                          className="config-row-delete"
-                          onClick={() => {
-                            setLoadOpen(false);
-                            setPendingDelete(deployment);
-                          }}
-                          aria-label={`Eliminar ${deployment.name}`}
-                          title={t("Eliminar configuración")}
-                        >
-                          <Trash2 size={13} />
-                        </button>
-                      </div>
-                    );
-                  })
-                )}
-              </div>
-
-              <footer className="flex items-center justify-between gap-3 border-t border-base-800 px-4 py-3">
-                <Button
-                  variant="quiet"
-                  icon={<Upload size={12} />}
-                  onClick={() => void pickImport()}
-                >
-                  {t("Cargar archivo…")}
-                </Button>
-                <Button variant="quiet" onClick={() => setLoadOpen(false)}>
-                  {t("Cerrar")}
-                </Button>
-              </footer>
+      <Dialog open={loadOpen} onOpenChange={setLoadOpen}>
+        <DialogContent
+          showCloseButton={false}
+          className="flex max-h-[min(80vh,40rem)] w-full max-w-2xl flex-col gap-0 overflow-hidden border border-base-700 bg-base-900 p-0 ring-0 shadow-float"
+        >
+          <DialogHeader className="flex-row items-start justify-between gap-4 border-b border-base-800 px-4 py-3">
+            <div>
+              <DialogTitle className="text-title">
+                {t("Configuraciones guardadas")}
+              </DialogTitle>
+              <DialogDescription className="mt-0.5 text-meta text-ink-500">
+                {t("Aplica una configuración al comando actual.")}
+              </DialogDescription>
             </div>
-          </div>,
-          document.body,
-        )}
+            <button
+              type="button"
+              className="btn-quiet -m-1 p-1 text-ink-500 hover:text-ink-200"
+              onClick={() => setLoadOpen(false)}
+              aria-label={t("Cerrar")}
+            >
+              <X size={14} />
+            </button>
+          </DialogHeader>
+
+          <div className="min-h-0 flex-1 overflow-y-auto p-2">
+            {deployments.length === 0 ? (
+              <p className="px-3 py-8 text-center text-label text-ink-500">
+                {t("Todavía no hay configuraciones guardadas.")}
+              </p>
+            ) : (
+              deployments.map((deployment) => {
+                const selected = deployment.id === config.activeDeploymentId;
+                return (
+                  <div
+                    key={deployment.id}
+                    className={clsx("config-row", selected && "config-row-on")}
+                  >
+                    <button
+                      type="button"
+                      className="config-row-main"
+                      onClick={() => void apply(deployment)}
+                      aria-current={selected ? "true" : undefined}
+                      title={deployment.name}
+                    >
+                      <span className="config-row-check">
+                        {selected && <Check size={13} />}
+                      </span>
+                      <span className="config-row-copy">
+                        <span className="config-row-name">{deployment.name}</span>
+                        <span className="config-row-model">
+                          {deployment.modelPath
+                            ? basename(deployment.modelPath)
+                            : t("Sin modelo")}
+                        </span>
+                      </span>
+                    </button>
+                    <button
+                      type="button"
+                      className="config-row-delete"
+                      onClick={() => {
+                        setLoadOpen(false);
+                        setPendingDelete(deployment);
+                      }}
+                      aria-label={`Eliminar ${deployment.name}`}
+                      title={t("Eliminar configuración")}
+                    >
+                      <Trash2 size={13} />
+                    </button>
+                  </div>
+                );
+              })
+            )}
+          </div>
+
+          <div className="flex items-center justify-between gap-3 border-t border-base-800 px-4 py-3">
+            <Button
+              variant="quiet"
+              icon={<Upload size={12} />}
+              onClick={() => void pickImport()}
+            >
+              {t("Importar archivo…")}
+            </Button>
+            <Button variant="quiet" onClick={() => setLoadOpen(false)}>
+              {t("Cerrar")}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       <PromptDialog
         open={promptMode !== null}
-        title={promptMode === "import" ? "Cargar configuración" : t("Guardar como")}
+        title={promptMode === "import" ? "Importar configuración" : t("Guardar como")}
         label="Nombre"
         defaultValue={promptDefault}
         placeholder="Gemma 32k en la RX 9070"
-        confirmLabel={promptMode === "import" ? "Cargar" : t("Guardar como")}
+        confirmLabel={promptMode === "import" ? "Importar" : t("Guardar como")}
         onConfirm={(name) => {
           if (promptMode === "import") void confirmImport(name);
           else void saveCurrent(name, true);

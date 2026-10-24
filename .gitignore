@@ -7,3 +7,5 @@ src-tauri/target/
 .env
 .env.*
 !.env.example
+.shots/
+.playwright-mcp/

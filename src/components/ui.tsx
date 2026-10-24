@@ -4,6 +4,7 @@ import {
   useCallback,
   useContext,
   useEffect,
+  useId,
   useMemo,
   useRef,
   useState,
@@ -11,6 +12,16 @@ import {
 } from "react";
 import { AlertTriangle, Check, Info, Loader2, X } from "lucide-react";
 import clsx from "clsx";
+import { toast } from "sonner";
+import {
+  AlertDialog,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui-kit/alert-dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui-kit/dialog";
+import { Toaster } from "@/components/ui-kit/sonner";
 
 // ---------------------------------------------------------------------------
 // Botón
@@ -398,26 +409,17 @@ export function Alert({
 // Avisos flotantes (toasts)
 // ---------------------------------------------------------------------------
 
-interface Toast {
-  id: number;
-  tone: "info" | "success" | "danger";
-  message: string;
-}
+type ToastTone = "info" | "success" | "danger";
 
 const ToastContext = createContext<{
-  push: (message: string, tone?: Toast["tone"]) => void;
+  push: (message: string, tone?: ToastTone) => void;
 }>({ push: () => {} });
 
 export function ToastProvider({ children }: { children: ReactNode }) {
-  const [toasts, setToasts] = useState<Toast[]>([]);
-  const counter = useRef(0);
-
-  const push = useCallback((message: string, tone: Toast["tone"] = "info") => {
-    const id = ++counter.current;
-    setToasts((t) => [...t, { id, tone, message }]);
-    setTimeout(() => {
-      setToasts((t) => t.filter((x) => x.id !== id));
-    }, 5200);
+  const push = useCallback((message: string, tone: ToastTone = "info") => {
+    if (tone === "danger") toast.error(message);
+    else if (tone === "success") toast.success(message);
+    else toast(message);
   }, []);
 
   const value = useMemo(() => ({ push }), [push]);
@@ -425,40 +427,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
   return (
     <ToastContext.Provider value={value}>
       {children}
-      <div className="pointer-events-none fixed bottom-4 right-4 z-50 flex w-[min(26rem,calc(100vw-2rem))] flex-col gap-2">
-        {toasts.map((t) => (
-          <div
-            key={t.id}
-            className={clsx(
-              "animate-fade-up pointer-events-auto flex items-start gap-2.5 rounded-card border px-3 py-2.5 shadow-float backdrop-blur",
-              t.tone === "danger"
-                ? "border-danger-500/40 bg-base-900/95 text-danger-400"
-                : t.tone === "success"
-                  ? "border-accent-500/40 bg-base-900/95 text-accent-300"
-                  : "border-base-700 bg-base-900/95 text-ink-200",
-            )}
-            role="status"
-          >
-            {t.tone === "danger" ? (
-              <AlertTriangle size={15} className="mt-0.5 shrink-0" />
-            ) : t.tone === "success" ? (
-              <Check size={15} className="mt-0.5 shrink-0" />
-            ) : (
-              <Info size={15} className="mt-0.5 shrink-0 text-ink-400" />
-            )}
-            <span className="min-w-0 flex-1 text-body leading-relaxed break-words">
-              {t.message}
-            </span>
-            <button
-              onClick={() => setToasts((all) => all.filter((x) => x.id !== t.id))}
-              className="btn-quiet -m-1 shrink-0 cursor-pointer rounded-control p-1 text-ink-500 hover:text-ink-200"
-              aria-label="Cerrar aviso"
-            >
-              <X size={13} />
-            </button>
-          </div>
-        ))}
-      </div>
+      <Toaster theme="dark" position="bottom-right" closeButton />
     </ToastContext.Provider>
   );
 }
@@ -488,32 +457,20 @@ export function ConfirmDialog({
   onConfirm: () => void;
   onCancel: () => void;
 }) {
-  useEffect(() => {
-    if (!open) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onCancel();
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [open, onCancel]);
-
-  if (!open) return null;
-
   return (
-    <div className="fixed inset-0 z-40 flex items-center justify-center p-4">
-      <div
-        className="absolute inset-0 bg-black/60 backdrop-blur-[2px]"
-        onClick={onCancel}
-        aria-hidden
-      />
-      <div
-        role="dialog"
-        aria-modal="true"
-        aria-label={title}
-        className="card animate-fade-up relative w-full max-w-md p-5 shadow-float"
-      >
-        <h3 className="text-sm font-semibold text-ink-100">{title}</h3>
-        <div className="mt-2 text-body leading-relaxed text-ink-300">{message}</div>
+    <AlertDialog
+      open={open}
+      onOpenChange={(next) => {
+        if (!next) onCancel();
+      }}
+    >
+      <AlertDialogContent className="border border-base-700 bg-base-900 p-5 ring-0 shadow-float sm:max-w-md">
+        <AlertDialogHeader className="gap-2">
+          <AlertDialogTitle className="text-title">{title}</AlertDialogTitle>
+          <AlertDialogDescription className="text-body leading-relaxed text-ink-300">
+            {message}
+          </AlertDialogDescription>
+        </AlertDialogHeader>
         <div className="mt-5 flex justify-end gap-2">
           <Button variant="quiet" onClick={onCancel}>
             Cancelar
@@ -522,8 +479,8 @@ export function ConfirmDialog({
             {confirmLabel}
           </Button>
         </div>
-      </div>
-    </div>
+      </AlertDialogContent>
+    </AlertDialog>
   );
 }
 
@@ -634,16 +591,14 @@ export function PromptDialog({
 }) {
   const [value, setValue] = useState(defaultValue ?? "");
   const inputRef = useRef<HTMLInputElement>(null);
+  const inputId = useId();
 
   useEffect(() => {
     if (open) {
       setValue(defaultValue ?? "");
-      // El foco entra en el campo al abrirse: se puede escribir de inmediato.
       setTimeout(() => inputRef.current?.select(), 30);
     }
   }, [open, defaultValue]);
-
-  if (!open) return null;
 
   const submit = () => {
     const v = value.trim();
@@ -651,43 +606,50 @@ export function PromptDialog({
   };
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-[2px]"
-      onClick={onCancel}
-      role="dialog"
-      aria-modal="true"
+    <Dialog
+      open={open}
+      onOpenChange={(next) => {
+        if (!next) onCancel();
+      }}
     >
-      <div
-        className="card w-full max-w-sm overflow-hidden shadow-float"
-        onClick={(e) => e.stopPropagation()}
+      <DialogContent
+        showCloseButton={false}
+        className="border border-base-700 bg-base-900 p-0 ring-0 shadow-float sm:max-w-sm"
       >
-        <header className="border-b border-base-800 px-4 py-3">
-          <h2 className="text-[0.8125rem] font-semibold text-ink-100">{title}</h2>
-        </header>
-        <div className="space-y-3 p-4">
-          {label && <label className="label">{label}</label>}
-          <input
-            ref={inputRef}
-            className="field"
-            value={value}
-            placeholder={placeholder}
-            onChange={(e) => setValue(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") submit();
-              if (e.key === "Escape") onCancel();
-            }}
-          />
-        </div>
-        <footer className="flex justify-end gap-2 border-t border-base-800 px-4 py-3">
-          <Button variant="quiet" onClick={onCancel}>
-            Cancelar
-          </Button>
-          <Button variant="primary" onClick={submit} disabled={!value.trim()}>
-            {confirmLabel}
-          </Button>
-        </footer>
-      </div>
-    </div>
+        <form
+          onSubmit={(event) => {
+            event.preventDefault();
+            submit();
+          }}
+        >
+          <DialogHeader className="border-b border-base-800 px-4 py-3">
+            <DialogTitle className="text-title">{title}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-2 p-4">
+            <label className="label" htmlFor={inputId}>
+              {label ?? "Nombre"}
+            </label>
+            <input
+              id={inputId}
+              ref={inputRef}
+              className="field"
+              value={value}
+              placeholder={placeholder}
+              autoComplete="off"
+              onChange={(event) => setValue(event.target.value)}
+            />
+          </div>
+          <div className="flex justify-end gap-2 border-t border-base-800 px-4 py-3">
+            <Button type="button" variant="quiet" onClick={onCancel}>
+              Cancelar
+            </Button>
+            <Button type="submit" variant="primary" disabled={!value.trim()}>
+              {confirmLabel}
+            </Button>
+          </div>
+        </form>
+      </DialogContent>
+    </Dialog>
   );
 }
 

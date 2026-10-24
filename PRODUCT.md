@@ -4,7 +4,7 @@
 
 ## Platform
 
-Windows desktop (Tauri 2)
+web
 
 ## Stack
 
