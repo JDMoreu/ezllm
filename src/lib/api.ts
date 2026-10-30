@@ -65,6 +65,7 @@ export const api = {
   hfModel: (repo: string) => invoke<HfModelDetail>("hf_model", { repo }),
   hfDownload: (repo: string, paths: string[]) =>
     invoke<HfDownloadResult>("hf_download", { repo, paths }),
+  hfCancelDownload: () => invoke<void>("hf_cancel_download"),
 
   // --- Memoria -----------------------------------------------------------
   estimateMemory: (

@@ -5,12 +5,14 @@ import { Check, ListFilter, Plus, Search, X } from "lucide-react";
 import { api } from "../lib/api";
 import { commandLine, flagValue, hasFlag, looksLikeValue, tokenizeArgs } from "../lib/args";
 import { t } from "../lib/i18n";
+import Hint from "./Hint";
 import {
   ARG_CATEGORY_LABEL,
   CATEGORY_ORDER,
   FALLBACK_OPTIONS,
   SUGGESTED_KEYS,
   categoryFor,
+  isInformational,
   metadataFor,
   type ArgCategory,
 } from "../lib/argCatalog";
@@ -63,7 +65,12 @@ export default function ArgumentLibrary({
     setLimit(60);
   }, [query, filter]);
 
-  const options = help?.options.length ? help.options : FALLBACK_OPTIONS;
+  // El catálogo del binario incluye `--help`, `--version` y compañía; son
+  // informativas, no configuración, así que no se ofrecen como argumentos.
+  const options = useMemo(() => {
+    const raw = help?.options.length ? help.options : FALLBACK_OPTIONS;
+    return raw.filter((option) => !isInformational(option));
+  }, [help]);
   const values = useMemo(() => tokenizeArgs(args).map((token) => token.value), [args]);
   const active = useMemo(
     () => options.filter((option) => isActive(values, option)),
@@ -128,15 +135,19 @@ export default function ArgumentLibrary({
 
   function startEdit(option: ArgOption) {
     setEditing(option.key);
-    const fallback = option.key === "ctx-size" ? "" : (option.defaultValue ?? "");
+    const fallback = option.key === "ctx-size" ? "" : (usableDefault(option) ?? "");
     setDraftValue(flagValue(values, option.flags) ?? fallback);
   }
 
   function apply(option: ArgOption, value: string) {
     const without = removeOption(values, option);
-    if (value.trim()) {
-      onChange(commandLine([...without, option.canonical, value.trim()]));
-    } else if (option.valueHint?.startsWith("[")) {
+    const trimmed = value.trim();
+    if (trimmed) {
+      onChange(commandLine([...without, option.canonical, trimmed]));
+    } else if (option.valueHint === null || option.valueHint.startsWith("[")) {
+      // Flag sin valor (--jinja, --mlock) o con valor opcional ([on|off|auto]):
+      // se añade sola. Antes esta rama no existía para las booleanas y el
+      // botón no hacía nada.
       onChange(commandLine([...without, option.canonical]));
     } else {
       return;
@@ -155,7 +166,7 @@ export default function ArgumentLibrary({
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
             <h2 id="arg-library-title" className="text-title font-semibold tracking-tight text-ink-100">
-              {t("Biblioteca de argumentos")}
+              {t("Argumentos")}
             </h2>
             {active.length > 0 && (
               <span className="arg-active-count">
@@ -180,7 +191,9 @@ export default function ArgumentLibrary({
               value={query}
               onChange={(event) => {
                 setQuery(event.target.value);
-                if (event.target.value) setFilter("Todas");
+                if (event.target.value) {
+                  setFilter("Todas");
+                }
               }}
               placeholder={t("Buscar un argumento…")}
               aria-label="Buscar argumentos de llama.cpp"
@@ -251,8 +264,12 @@ export default function ArgumentLibrary({
             const isOn = isActive(values, option);
             const currentValue = flagValue(values, option.flags);
             const isEditing = editing === option.key;
-            const choices = choicesFor(option.valueHint);
+            const choices =
+              option.choices && option.choices.length > 0
+                ? option.choices
+                : choicesFor(option.valueHint);
             const quickValues = quickValuesFor(option);
+            const fallback = usableDefault(option);
 
             return (
               <li key={option.key} className={clsx("arg-row", isOn && "arg-row-on")}>
@@ -277,9 +294,9 @@ export default function ArgumentLibrary({
                         <span className="mono">
                           {option.key === "ctx-size" ? "tokens" : option.valueHint}
                         </span>
-                        {option.defaultValue && option.key !== "ctx-size" && (
+                        {fallback && option.key !== "ctx-size" && (
                           <>
-                            {" "}· {t("por defecto")} <span className="mono">{option.defaultValue}</span>
+                            {" "}· {t("por defecto")} <span className="mono">{fallback}</span>
                           </>
                         )}
                       </p>
@@ -293,13 +310,20 @@ export default function ArgumentLibrary({
                     )}
                   >
                     {isEditing ? (
-                      <div className="arg-inline-editor">
+                      <div
+                        className="arg-inline-editor"
+                        onKeyDown={(event) => {
+                          if (event.key === "Escape") setEditing(null);
+                        }}
+                      >
                         {choices.length > 0 ? (
+                          // Cada opción es un valor completo: elegirla lo aplica
+                          // y cierra el editor, sin un segundo botón.
                           choices.map((choice) => (
                             <button
                               key={choice}
                               type="button"
-                              onClick={() => setDraftValue(choice)}
+                              onClick={() => apply(option, choice)}
                               className={clsx(
                                 "arg-choice",
                                 draftValue === choice && "arg-choice-on",
@@ -310,44 +334,51 @@ export default function ArgumentLibrary({
                           ))
                         ) : (
                           <>
-                            <input
-                              autoFocus
-                              value={draftValue}
-                              onChange={(event) => setDraftValue(event.target.value)}
-                              onKeyDown={(event) => {
-                                if (event.key === "Enter") apply(option, draftValue);
-                                if (event.key === "Escape") setEditing(null);
-                              }}
-                              className="field mono arg-inline-input"
-                              placeholder={
-                                option.key === "ctx-size"
-                                  ? "32768"
-                                  : (option.valueHint ?? "")
-                              }
-                              inputMode={option.key === "ctx-size" ? "numeric" : undefined}
-                              aria-label={`Valor para ${option.canonical}`}
-                            />
+                            <span className="arg-edit">
+                              <input
+                                autoFocus
+                                value={draftValue}
+                                onChange={(event) => setDraftValue(event.target.value)}
+                                onFocus={(event) => event.currentTarget.select()}
+                                onKeyDown={(event) => {
+                                  if (event.key === "Enter") apply(option, draftValue);
+                                  if (event.key === "Escape") setEditing(null);
+                                }}
+                                placeholder={
+                                  option.key === "ctx-size"
+                                    ? "32768"
+                                    : (option.valueHint ?? "")
+                                }
+                                inputMode={option.key === "ctx-size" ? "numeric" : undefined}
+                                aria-label={`Valor para ${option.canonical}`}
+                                size={Math.min(24, Math.max(6, draftValue.length + 2))}
+                                spellCheck={false}
+                              />
+                            </span>
                             {quickValues.map((value) => (
                               <button
                                 key={value}
                                 type="button"
                                 className="arg-inline-preset"
-                                onClick={() => setDraftValue(value)}
+                                onClick={() => apply(option, value)}
                                 title={`${value} tokens`}
                               >
                                 {compactTokens(value)}
                               </button>
                             ))}
+                            <Hint label={t("Aplicar")}>
+                              <button
+                                type="button"
+                                className="arg-inline-apply"
+                                onClick={() => apply(option, draftValue)}
+                                disabled={!draftValue.trim()}
+                                aria-label={t("Aplicar")}
+                              >
+                                <Check size={13} aria-hidden />
+                              </button>
+                            </Hint>
                           </>
                         )}
-                        <Button
-                          size="sm"
-                          variant="primary"
-                          onClick={() => apply(option, draftValue)}
-                          disabled={!draftValue.trim() && !option.valueHint?.startsWith("[")}
-                        >
-                          {isOn ? t("Aplicar") : t("Añadir")}
-                        </Button>
                         <button
                           type="button"
                           className="arg-inline-cancel"
@@ -367,7 +398,8 @@ export default function ArgumentLibrary({
                         )}
                         <Button
                           size="sm"
-                          variant={isOn ? "quiet" : "ghost"}
+                          variant="quiet"
+                          className={!isOn ? "text-accent-300" : undefined}
                           icon={isOn ? <X size={12} /> : <Plus size={12} />}
                           onClick={() => {
                             if (isOn) remove(option);
@@ -404,6 +436,20 @@ function isActive(values: string[], option: ArgOption): boolean {
   return option.valueHint === null
     ? hasFlag(values, option.flags)
     : flagValue(values, option.flags) !== null;
+}
+
+/**
+ * Default que se puede mostrar y precargar. llama.cpp escribe prosa en el
+ * hueco del valor («same as --threads», «*»), y precargarla daría un valor
+ * inválido en el editor.
+ */
+function usableDefault(option: ArgOption): string | null {
+  const value = option.defaultValue?.trim();
+  if (!value) return null;
+  if (/^-?\d+(?:\.\d+)?$/.test(value)) return value; // -1, 0.80
+  if (value.startsWith("-")) return null; // --otra-flag
+  if (/^[a-z0-9_.]+$/i.test(value)) return value; // auto, f16, disabled
+  return null; // prosa y «*»
 }
 
 function removeOption(values: string[], option: ArgOption): string[] {

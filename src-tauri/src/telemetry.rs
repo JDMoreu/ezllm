@@ -33,6 +33,106 @@ pub struct RamUsage {
     pub used_bytes: u64,
 }
 
+/// Uso del motor gráfico más ocupado, en porcentaje.
+///
+/// Sale de los contadores «GPU Engine» de Windows, la misma fuente que el
+/// Administrador de tareas: es el motor más saturado en el último intervalo,
+/// no la suma de todos (sumarlos pasaría del 100 %).
+#[derive(Debug, Clone, Copy, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GpuLoad {
+    pub percent: f64,
+}
+
+#[cfg(windows)]
+fn gpu_load() -> Option<GpuLoad> {
+    use std::sync::Mutex;
+    use windows_sys::Win32::System::Performance::{
+        PDH_FMT_COUNTERVALUE_ITEM_W, PDH_FMT_DOUBLE, PDH_HCOUNTER, PDH_HQUERY, PDH_MORE_DATA,
+        PdhAddEnglishCounterW, PdhCloseQuery, PdhCollectQueryData, PdhGetFormattedCounterArrayW,
+        PdhOpenQueryW,
+    };
+
+    // La consulta se abre una vez y se consulta en cada sondeo: un contador de
+    // tasa necesita dos lecturas separadas en el tiempo para dar un valor.
+    static QUERY: Mutex<Option<(usize, usize)>> = Mutex::new(None);
+
+    let mut guard = QUERY.lock().unwrap();
+    if guard.is_none() {
+        let path: Vec<u16> = "\\GPU Engine(*)\\Utilization Percentage\0"
+            .encode_utf16()
+            .collect();
+        unsafe {
+            let mut query: PDH_HQUERY = std::ptr::null_mut();
+            if PdhOpenQueryW(std::ptr::null(), 0, &mut query) != 0 {
+                return None;
+            }
+            let mut counter: PDH_HCOUNTER = std::ptr::null_mut();
+            if PdhAddEnglishCounterW(query, path.as_ptr(), 0, &mut counter) != 0 {
+                let _ = PdhCloseQuery(query);
+                return None;
+            }
+            *guard = Some((query as usize, counter as usize));
+        }
+    }
+    let (query, counter) = (*guard)?;
+
+    unsafe {
+        let query = query as PDH_HQUERY;
+        let counter = counter as PDH_HCOUNTER;
+        if PdhCollectQueryData(query) != 0 {
+            return None;
+        }
+
+        let mut size = 0u32;
+        let mut count = 0u32;
+        let status = PdhGetFormattedCounterArrayW(
+            counter,
+            PDH_FMT_DOUBLE,
+            &mut size,
+            &mut count,
+            std::ptr::null_mut(),
+        );
+        // La primera lectura tras abrir la consulta aún no tiene delta.
+        if status != PDH_MORE_DATA || size == 0 {
+            return None;
+        }
+
+        let item_size = std::mem::size_of::<PDH_FMT_COUNTERVALUE_ITEM_W>();
+        let mut items =
+            vec![PDH_FMT_COUNTERVALUE_ITEM_W::default(); (size as usize).div_ceil(item_size)];
+        let status = PdhGetFormattedCounterArrayW(
+            counter,
+            PDH_FMT_DOUBLE,
+            &mut size,
+            &mut count,
+            items.as_mut_ptr(),
+        );
+        if status != 0 {
+            return None;
+        }
+
+        let mut busiest = 0.0f64;
+        for item in items.iter().take(count as usize) {
+            if item.FmtValue.CStatus != 0 {
+                continue;
+            }
+            let value = item.FmtValue.Anonymous.doubleValue;
+            if value.is_finite() && value > busiest {
+                busiest = value;
+            }
+        }
+        Some(GpuLoad {
+            percent: busiest.clamp(0.0, 100.0),
+        })
+    }
+}
+
+#[cfg(not(windows))]
+fn gpu_load() -> Option<GpuLoad> {
+    None
+}
+
 /// Memoria y tiempo de CPU del proceso `llama-server`.
 #[derive(Debug, Clone, Copy, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -52,6 +152,9 @@ pub struct Telemetry {
     pub ram: RamUsage,
     /// VRAM por dispositivo. Vacía si no hay llama.cpp instalado.
     pub gpus: Vec<crate::hardware::GpuDevice>,
+    /// Uso del motor gráfico más ocupado. `None` si Windows no expone los
+    /// contadores «GPU Engine» o si aún no hay dos muestras.
+    pub gpu: Option<GpuLoad>,
     /// Proceso del servidor, si está en marcha.
     pub process: Option<ProcessUsage>,
     /// Escenario: `gpu` si el modelo cabe en VRAM, `hybrid` si se reparte.
@@ -287,6 +390,7 @@ pub fn snapshot(llama_server: Option<&str>, server_pid: Option<u32>) -> Telemetr
         },
         ram: ram_usage(),
         gpus: gpu_usage(llama_server),
+        gpu: gpu_load(),
         process: server_pid.and_then(process_usage),
         timestamp_ms: now_ms(),
     }

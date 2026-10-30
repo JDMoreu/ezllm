@@ -139,6 +139,10 @@ export function hasFlag(values: string[], names: string[]): boolean {
 function numberFlag(values: string[], names: string[]): number | null {
   const raw = flagValue(values, names);
   if (!raw) return null;
+  // llama.cpp acepta `auto` (-1) y `all` (-2) además de un número de capas.
+  const keyword = raw.toLowerCase();
+  if (keyword === "auto") return -1;
+  if (keyword === "all") return -2;
   const value = Number(raw);
   return Number.isFinite(value) ? value : null;
 }
@@ -206,4 +210,32 @@ export function composeFlags(
 export function appendArgs(current: string, addition: string): string {
   const trimmed = current.trimEnd();
   return trimmed ? `${trimmed} ${addition}` : addition;
+}
+
+/**
+ * Fija una flag con valor, reemplazando cualquier alias que ya estuviera.
+ * `value === null` la elimina. Se usa en los ajustes rápidos: el usuario
+ * elige «GPU» y la app escribe `-ngl`, sin obligarle a conocer la sintaxis.
+ */
+export function upsertFlag(
+  current: string,
+  aliases: string[],
+  canonical: string,
+  value: string | null,
+): string {
+  const tokens = tokenizeArgs(current).map((token) => token.value);
+  const out: string[] = [];
+  for (let i = 0; i < tokens.length; i++) {
+    const token = tokens[i];
+    const match = aliases.find(
+      (alias) => token === alias || token.startsWith(`${alias}=`),
+    );
+    if (!match) {
+      out.push(token);
+      continue;
+    }
+    if (token === match && looksLikeValue(tokens[i + 1])) i++;
+  }
+  if (value !== null) out.push(canonical, value);
+  return commandLine(out);
 }

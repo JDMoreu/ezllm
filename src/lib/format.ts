@@ -1,11 +1,18 @@
 /** Utilidades de formato: Bytes, GiB, fechas, números. */
 
+import { currentLocale, decimalSeparator } from "./i18n";
+
+/** Decimal con el separador del idioma activo, no siempre un punto. */
+function fixed(value: number, decimals: number): string {
+  return value.toFixed(decimals).replace(".", decimalSeparator());
+}
+
 export function formatBytes(bytes: number, decimals = 1): string {
   if (!Number.isFinite(bytes) || bytes <= 0) return "0 B";
   const units = ["B", "KB", "MB", "GB", "TB"];
   const i = Math.min(Math.floor(Math.log(bytes) / Math.log(1024)), units.length - 1);
   const value = bytes / Math.pow(1024, i);
-  return `${value.toFixed(i === 0 ? 0 : decimals)} ${units[i]}`;
+  return `${fixed(value, i === 0 ? 0 : decimals)} ${units[i]}`;
 }
 
 /**
@@ -18,17 +25,17 @@ export function formatBytes(bytes: number, decimals = 1): string {
 export function formatBytesAs(bytes: number, unit: "MiB" | "GiB", decimals = 1): string {
   if (!Number.isFinite(bytes) || bytes <= 0) return `0 ${unit}`;
   const div = unit === "MiB" ? 1024 ** 2 : 1024 ** 3;
-  return `${(bytes / div).toFixed(decimals)} ${unit}`;
+  return `${fixed(bytes / div, decimals)} ${unit}`;
 }
 
 export function formatGb(gb: number, decimals = 2): string {
   if (!Number.isFinite(gb)) return "—";
-  return `${gb.toFixed(decimals).replace(".", ",")} GB`;
+  return `${fixed(gb, decimals)} GB`;
 }
 
 export function formatMiB(mib: number, decimals = 0): string {
   if (!Number.isFinite(mib)) return "—";
-  return `${mib.toFixed(decimals)} MiB`;
+  return `${fixed(mib, decimals)} MiB`;
 }
 
 /** Bytes por segundo en una unidad legible. */
@@ -42,7 +49,7 @@ export function formatDate(iso: string | null | undefined): string {
   if (!iso) return "—";
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return "—";
-  return d.toLocaleDateString("es-ES", {
+  return d.toLocaleDateString(currentLocale(), {
     day: "2-digit",
     month: "short",
     year: "numeric",
@@ -53,7 +60,7 @@ export function formatDateTime(iso: string | null | undefined): string {
   if (!iso) return "—";
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return "—";
-  return d.toLocaleString("es-ES", {
+  return d.toLocaleString(currentLocale(), {
     day: "2-digit",
     month: "short",
     hour: "2-digit",
@@ -74,14 +81,14 @@ export function formatElapsed(seconds: number | null | undefined): string {
 /** Número grande con separador de miles. */
 export function formatNumber(n: number | null | undefined): string {
   if (n === null || n === undefined || !Number.isFinite(n)) return "—";
-  return n.toLocaleString("es-ES");
+  return n.toLocaleString(currentLocale());
 }
 
 /** Millones de parámetros a texto legible: 4.28B -> "4.28 B". */
 export function formatParams(n: number): string {
   if (!n) return "—";
-  if (n >= 1e9) return `${(n / 1e9).toFixed(2)} B`;
-  if (n >= 1e6) return `${(n / 1e6).toFixed(1)} M`;
+  if (n >= 1e9) return `${fixed(n / 1e9, 2)} B`;
+  if (n >= 1e6) return `${fixed(n / 1e6, 1)} M`;
   return formatNumber(n);
 }
 

@@ -2,6 +2,41 @@ export type Language = "es" | "en";
 
 let current: Language = "es";
 
+/**
+ * El idioma efectivo. En desarrollo, Vite puede instanciar este módulo más de
+ * una vez (HMR); `document.lang` es el estado compartido que evita que el
+ * formato de números y la interfaz lean idiomas distintos.
+ */
+function activeLanguage(): Language {
+  // El documento es el único estado compartido entre instancias del módulo.
+  // Si aún no se fijó el idioma, el producto es español por defecto.
+  if (typeof document !== "undefined") {
+    return document.documentElement.lang === "en" ? "en" : "es";
+  }
+  return current;
+}
+
+/** Locale de formato: fechas, números y decimales siguen el idioma elegido. */
+export function currentLocale(): string {
+  return activeLanguage() === "en" ? "en-US" : "es-ES";
+}
+
+/** Separador decimal del idioma activo. */
+export function decimalSeparator(): string {
+  return activeLanguage() === "en" ? "." : ",";
+}
+
+/** Fija el idioma activo. `t()` y los formateadores lo leen de aquí. */
+export function setLanguage(language: Language): void {
+  current = language;
+  if (typeof window !== "undefined") {
+    (window as Window & { __ezllmLanguage?: string }).__ezllmLanguage = language;
+  }
+  if (typeof document !== "undefined") {
+    document.documentElement.lang = language;
+  }
+}
+
 const EN: Record<string, string> = {
   Ejecutar: "Run",
   Modelos: "Models",
@@ -80,7 +115,8 @@ const EN: Record<string, string> = {
   "Abrir archivo…": "Open file…",
   "No se pudo": "Could not",
   "Sin guardar": "Unsaved",
-  "modificada": "modified",
+  "Cambios sin guardar": "Unsaved changes",
+  "Cambiar configuración…": "Switch configuration…",
   "Desplegando modelo…": "Deploying model…",
   "Memoria estimada": "Estimated memory",
   "Edita los flags. La biblioteca los añade a este mismo comando.":
@@ -167,7 +203,7 @@ const EN: Record<string, string> = {
     "Optional for speculative decoding.",
   "Descargar": "Download",
   "Usar": "Use",
-  "En este equipo": "Local",
+  "En este equipo": "On this device",
   "Carpeta de modelos": "Models folder",
   "Filtrar modelos instalados…": "Filter installed models…",
   "Actualizar": "Refresh",
@@ -230,25 +266,209 @@ const EN: Record<string, string> = {
   "Configuración importada": "Configuration imported",
   "Configuración exportada": "Configuration exported",
   "Preset": "Preset",
+  "Sin motor": "No runtime",
+  "Limpiar búsqueda": "Clear search",
+  "Incompleto": "Incomplete",
+  archivos: "files",
+  "Descargando…": "Downloading…",
+  "En cola": "Queued",
+  Descargando: "Downloading",
+  "Tu GPU": "Your GPU",
+  "Recomendado para tu equipo": "Recommended for your machine",
+  Proyector: "Projector",
+  "Instalar el motor": "Install runtime",
+  "Elegir un modelo": "Choose a model",
+  Reiniciar: "Restart",
+  Ocultar: "Hide",
+  "Ver argumentos": "Show arguments",
+  "Detener y usar": "Stop and use",
+  "Detener el servidor y usar este build": "Stop the server and use this build",
+  "Al cambiar de build se detendrá el servidor en marcha.":
+    "Switching builds stops the running server.",
+  "Filtra tus GGUF por nombre o cuantización…": "Filter your GGUFs by name or quantization…",
+  "Todavía no hay GGUF en esta carpeta.": "There are no GGUFs in this folder yet.",
+  "Ningún GGUF coincide con": "No GGUF matches",
+  Canal: "Channel",
+  Reintentar: "Retry",
+  "Prueba con un nombre conocido": "Try a known name",
+  Resultados: "Results",
+  "Detén el servidor para eliminar este build": "Stop the server to delete this build",
+  "Eliminar build": "Delete build",
+  "Más opciones de guardado": "More save options",
+  "Los cambios se aplican al reiniciar el servidor.":
+    "Changes apply when the server restarts.",
+  "Importar archivo…": "Import file…",
+  "Saltar al contenido": "Skip to content",
+  "Uso de CPU": "CPU usage",
+  "Espacio de trabajo": "Workspace",
+  "RAM en uso": "RAM in use",
+  "VRAM en uso": "VRAM in use",
+  "Volver a leer la carpeta de modelos": "Rescan the models folder",
+  "Fuente de modelos": "Model source",
+  "Configuración actual": "Current configuration",
+  "Sin configuración": "No configuration",
+  Cambiar: "Change",
+  Ajustes: "Settings",
+  Carpetas: "Folders",
+  Abrir: "Open",
+  "Abrir carpeta": "Open folder",
+  "Cambia la interfaz y el formato de fechas y números.":
+    "Changes the interface and the date and number formats.",
+  "La configuración se guarda en": "Configuration is saved in",
+  "Los modelos y los binarios viven en las carpetas de arriba.":
+    "Models and binaries live in the folders above.",
+  "Carpetas que la app lee y escribe. Nada se sube a la nube.":
+    "Folders the app reads and writes. Nothing is uploaded to the cloud.",
+  "Ver cola": "View queue",
+  "Vaciar cola": "Clear queue",
+  "Solo los que caben": "Only what fits",
+  "Oculta las cuantizaciones que no caben en tu equipo":
+    "Hides quantizations that do not fit your machine",
+  "Ninguna cuantización cabe en tu equipo. Quita el filtro para ver todas.":
+    "No quantization fits your machine. Clear the filter to see all.",
+  "El archivo que se cargará. Multimodal y MTP son opcionales.":
+    "The file that will be loaded. Multimodal and MTP are optional.",
+  "Dónde se carga el modelo. Lo que no cabe en la GPU se queda en la RAM.":
+    "Where the model is loaded. What does not fit in the GPU stays in RAM.",
+  "Sin GPU dedicada": "No dedicated GPU",
+  libres: "free",
+  Hardware: "Hardware",
+  Auto: "Auto",
+  "GPU + CPU": "GPU + CPU",
+  "Todo en RAM": "All in RAM",
+  "Todo, puede fallar": "All, may fail",
+  Mixto: "Mixed",
+  "llama.cpp reparte las capas según la memoria disponible.":
+    "llama.cpp distributes layers according to available memory.",
+  "Todas las capas en la GPU. Si no cabe, el arranque puede fallar.":
+    "All layers on the GPU. If it does not fit, startup may fail.",
+  "La GPU hace una parte y la RAM el resto.":
+    "The GPU does part of the work and RAM does the rest.",
+  "Sin GPU. Más lento, pero funciona en cualquier equipo.":
+    "No GPU. Slower, but works on any machine.",
+  "llama.cpp reparte las capas según la memoria que encuentra. La opción segura si no quieres pensar.":
+    "llama.cpp distributes layers according to the memory it finds. The safe option if you do not want to think about it.",
+  "Todas las capas en la GPU. Si el modelo no cabe, el arranque puede fallar.":
+    "All layers on the GPU. If the model does not fit, startup may fail.",
+  "La GPU hará": "The GPU will run",
+  de: "of",
+  "capas; la RAM, el resto.": "layers; RAM takes the rest.",
+  "La GPU hace una parte y la RAM el resto. Más lento que GPU, más rápido que CPU.":
+    "The GPU does part of the work and RAM the rest. Slower than GPU, faster than CPU.",
+  "Todo en RAM. Funciona en cualquier equipo; el más lento.":
+    "All in RAM. Works on any machine; the slowest option.",
+  "Por defecto": "Default",
+  "El modelo decide. Empieza aquí si no quieres tocar nada.":
+    "The model decides. Start here if you do not want to change anything.",
+  Precisa: "Precise",
+  "Estable y literal. Para código, datos y respuestas factuales.":
+    "Stable and literal. For code, data and factual answers.",
+  "Natural sin desvariar. La opción habitual.":
+    "Natural without drifting. The usual choice.",
+  Creativa: "Creative",
+  "Más variada y libre; puede inventar o divagar.":
+    "More varied and free; it may invent or ramble.",
+  Personalizada: "Custom",
+  "Temperatura personalizada.": "Custom temperature.",
+  "No fija --temp: usa el valor por defecto del modelo.":
+    "Does not set --temp: uses the model default.",
+  "Cuánto texto puede recordar. Más contexto gasta más memoria.":
+    "How much text it can remember. More context uses more memory.",
+  "Exactamente lo que se ejecutará. Los argumentos de abajo se añaden aquí.":
+    "Exactly what will run. The arguments below are appended here.",
+  "Tu GPU está disponible.": "Your GPU is available.",
+  "Usar Auto": "Use Auto",
+  "No se pudieron cargar las versiones estables":
+    "Could not load stable versions",
+  "GitHub puede limitar las peticiones anónimas. Las builds nightly siguen disponibles mientras tanto.":
+    "GitHub may rate-limit anonymous requests. Nightly builds are still available.",
+  "Ver Nightly": "View Nightly",
+  Cabe: "Fits",
+  Justa: "Tight",
+  "No cabe": "Won't fit",
+  "Sin datos": "No data",
+  Creatividad: "Creativity",
+  "Cabe con margen en la VRAM de tu GPU.":
+    "Fits with room in your GPU's VRAM.",
+  "Cabe con margen en la RAM disponible.":
+    "Fits with room in available RAM.",
+  "Cabe, pero deja poco margen para la caché KV. Puede necesitar reparto.":
+    "Fits, but leaves little room for the KV cache. May need splitting.",
+  "Cabe, pero deja poco margen en la RAM.":
+    "Fits, but leaves little room in RAM.",
+  "No cabe en la VRAM; necesitará RAM/CPU o fallará al cargar.":
+    "Doesn't fit in VRAM; it will need RAM/CPU or fail to load.",
+  "No cabe en la RAM disponible ahora.":
+    "Doesn't fit in available RAM now.",
+  "No hay datos de VRAM o el tamaño es desconocido.":
+    "No VRAM data or unknown size.",
+  "No hay datos de RAM o el tamaño es desconocido.":
+    "No RAM data or unknown size.",
+  "Token de GitHub (opcional)": "GitHub token (optional)",
+  "Guardar token": "Save token",
+  "Motor consulta a GitHub las versiones de llama.cpp. Sin token, GitHub permite 60 peticiones por hora desde tu IP; con un token, 5000. No necesita permisos y se guarda solo en este equipo.":
+    "Runtime asks GitHub for the llama.cpp releases. Without a token GitHub allows 60 requests per hour from your IP; with one, 5,000. It needs no scopes and is stored only on this machine.",
+  "Las versiones instaladas siguen disponibles aunque la lista remota no cargue.":
+    "Installed versions remain available even if the remote list cannot load.",
+  Argumentos: "Arguments",
+  "Elegir un GGUF…": "Choose a GGUF…",
+  "Añadir proyector multimodal": "Add multimodal projector",
+  "Opcional para imágenes, audio o vídeo": "Optional for images, audio or video",
+  "Añadir MTP": "Add MTP",
+  "Opcional para decodificación especulativa": "Optional for speculative decoding",
+  "Buscar modelo": "Browse for model",
+  "Buscar proyector": "Browse for projector",
+  "Buscar MTP": "Browse for MTP",
+  "Auto · recomendado": "Auto · recommended",
+  "GPU · todas las capas": "GPU · all layers",
+  "CPU · sin GPU": "CPU · no GPU",
+  Compatibilidad: "Compatibility",
+  "Reparte capas entre GPU y CPU.": "Splits layers between GPU and CPU.",
+  "Todo en la GPU; puede fallar si no cabe.":
+    "All on the GPU; may fail if it does not fit.",
+  "capas en GPU; el resto en RAM.": "layers on GPU; the rest in RAM.",
+  "GPU + CPU; el resto en RAM.": "GPU + CPU; the rest in RAM.",
+  "Todo en RAM; el más lento.": "All in RAM; the slowest.",
+  "Modelo listo en Ejecutar": "Model ready in Run",
+  "Buscar modelos GGUF en Hugging Face": "Search GGUF models on Hugging Face",
+  "Modelos de Hugging Face": "Hugging Face models",
+  "Requiere acceso en Hugging Face": "Requires access on Hugging Face",
+  "Actualizado {date}": "Updated {date}",
+  "Elige un modelo para ver sus archivos GGUF.": "Choose a model to see its GGUF files.",
+  "Descargar un modelo grande": "Download a large model",
+  "El archivo ocupa {size} y puede tardar varios minutos. Se guardará en":
+    "The file takes up {size} and may take several minutes. It will be saved in",
+  "{size} de {vram} ({percent}%)": "{size} of {vram} ({percent}%)",
+  "Ocultar las que no caben en tu VRAM": "Hide files that don't fit in your VRAM",
+  "Contexto máximo": "Maximum context",
+  "Abrir en Hugging Face": "Open on Hugging Face",
+  "Repositorio con acceso restringido: acepta la licencia en Hugging Face. Esta versión descarga de forma anónima y no acepta tokens.":
+    "Restricted repository: accept the license on Hugging Face. This version downloads anonymously and does not accept tokens.",
+  "Archivos GGUF": "GGUF files",
+  "Este repositorio no contiene archivos GGUF descargables.":
+    "This repository has no downloadable GGUF files.",
+  "Comprobando SHA-256": "Checking SHA-256",
+  "Faltan archivos de esta cuantización": "Files are missing for this quantization",
+  "Faltan archivos": "Files missing",
+  "Buscar archivo…": "Choose file…",
+  "CPU": "CPU",
+  "Elegir modelo…": "Choose a model…",
+  "GitHub": "GitHub",
+  "Memoria": "Memory",
+  "Ninguno": "None",
+  "Uso de GPU": "GPU usage",
 };
 
 export function languageFrom(value: string | null | undefined): Language {
   return value === "en" ? "en" : "es";
 }
 
-export function setLanguage(language: Language) {
-  current = language;
-  if (typeof document !== "undefined") {
-    document.documentElement.lang = language;
-  }
-}
-
 export function getLanguage(): Language {
-  return current;
+  return activeLanguage();
 }
 
 export function t(spanish: string, vars?: Record<string, string | number>): string {
-  const template = current === "en" ? (EN[spanish] ?? spanish) : spanish;
+  const template = activeLanguage() === "en" ? (EN[spanish] ?? spanish) : spanish;
   if (!vars) return template;
   return template.replace(/\{(\w+)\}/g, (_, key: string) => String(vars[key] ?? ""));
 }

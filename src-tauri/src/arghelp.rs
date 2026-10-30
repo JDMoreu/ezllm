@@ -29,6 +29,8 @@ pub struct HelpOption {
     pub section: String,
     /// Descripción oficial. La UI añade texto en español para las flags comunes.
     pub description: String,
+    /// Valores admitidos que publica el propio `--help`, si los hay.
+    pub choices: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -127,6 +129,12 @@ pub fn parse(text: &str) -> Vec<HelpOption> {
             if trimmed.is_empty() {
                 continue;
             }
+            // llama.cpp publica "allowed values: a, b, c" en su propia línea.
+            // Se convierte en una lista elegible en vez de meterse en el texto.
+            if let Some(list) = allowed_values(trimmed) {
+                option.choices = list;
+                continue;
+            }
             if !trimmed.starts_with("(env:") {
                 option.description.push(' ');
                 option.description.push_str(trimmed);
@@ -144,6 +152,21 @@ struct PendingOption {
     value_hint: Option<String>,
     section: String,
     description: String,
+    choices: Vec<String>,
+}
+
+/// Lee `allowed values: f32, f16, ...` (o `possible values:`) como lista.
+fn allowed_values(line: &str) -> Option<Vec<String>> {
+    let rest = line
+        .strip_prefix("allowed values:")
+        .or_else(|| line.strip_prefix("possible values:"))?;
+    let values: Vec<String> = rest
+        .split(',')
+        .map(|value| value.trim().trim_matches(|c| c == '{' || c == '}' || c == '.'))
+        .filter(|value| !value.is_empty())
+        .map(str::to_string)
+        .collect();
+    (!values.is_empty()).then_some(values)
 }
 
 fn parse_header(line: &str, section: &str) -> PendingOption {
@@ -178,6 +201,7 @@ fn parse_header(line: &str, section: &str) -> PendingOption {
         value_hint: (!value_parts.is_empty()).then(|| value_parts.join(" ")),
         section: section.to_string(),
         description: inline_description.trim().to_string(),
+        choices: Vec::new(),
     }
 }
 
@@ -213,6 +237,7 @@ fn flush(current: &mut Option<PendingOption>, options: &mut Vec<HelpOption>) {
         default_value,
         section: pending.section,
         description,
+        choices: pending.choices,
     });
 }
 
@@ -231,8 +256,41 @@ fn default_value(description: &str) -> Option<String> {
     let start = lower.find("default:")? + "default:".len();
     let rest = description[start..].trim_start();
     let end = rest.find(')').unwrap_or(rest.len());
-    let value = rest[..end].trim().trim_end_matches(',').trim();
-    (!value.is_empty()).then(|| value.to_string())
+    let value = clean_default(&rest[..end]);
+    (!value.is_empty()).then_some(value)
+}
+
+/// Deja solo el valor por defecto. llama.cpp añade la explicación detrás:
+/// `-1, -1 = auto`, `0, 0 = disabled`, `0 - same as --n-ubatch`. Antes se
+/// guardaba todo junto y el editor precargaba `-1, -1 = auto` como valor.
+fn clean_default(text: &str) -> String {
+    let mut value = text.trim();
+    // «X = explicación» corta siempre.
+    if let Some(index) = value.find(" = ") {
+        value = &value[..index];
+    }
+    // «0 - same as …» también.
+    if let Some(index) = value.find(" - ") {
+        value = &value[..index];
+    }
+    // «-1, -1 = auto», «8192, 0 for decision»: solo si lo que sigue es otro
+    // número; así no se rompen listas reales como los samplers separados por «;».
+    for separator in [", ", "; "] {
+        if let Some(index) = value.find(separator) {
+            let next = value[index + separator.len()..].trim_start();
+            if next.starts_with(|c: char| c.is_ascii_digit() || c == '-') {
+                value = &value[..index];
+            }
+        }
+    }
+    let trimmed = value.trim().trim_matches(|c| c == ',' || c == ';').trim();
+    // `default: ""` no es un valor que mostrar.
+    let unquoted = trimmed.trim_matches(|c| c == '\'' || c == '"');
+    if unquoted.is_empty() {
+        String::new()
+    } else {
+        unquoted.to_string()
+    }
 }
 
 #[cfg(target_os = "windows")]
@@ -284,5 +342,47 @@ mod tests {
         assert_eq!(options[0].section, "example-specific");
         assert!(options[0].description.contains("full history"));
         assert_eq!(options[0].default_value.as_deref(), Some("enabled"));
+    }
+
+    #[test]
+    fn allowed_values_become_choices_not_description() {
+        // Línea real de llama-server b11829.
+        let text = "\
+-ctk,  --cache-type-k TYPE              KV cache data type for K
+                                        allowed values: f32, f16, bf16, q8_0, q4_0, q4_1, iq4_nl, q5_0, q5_1
+                                        (default: f16)
+";
+        let options = parse(text);
+        assert_eq!(options.len(), 1);
+        assert_eq!(options[0].choices.len(), 9);
+        assert_eq!(options[0].choices[7], "q5_0");
+        assert_eq!(options[0].default_value.as_deref(), Some("f16"));
+        assert!(!options[0].description.contains("allowed values"));
+    }
+
+    #[test]
+    fn default_value_drops_the_explanation() {
+        // Formatos reales de `llama-server --help`.
+        for (text, expected) in [
+            ("x (default: -1, -1 = auto)", "-1"),
+            ("x (default: 0, 0 = disabled)", "0"),
+            ("x (default: 8192, 0 for decision)", "8192"),
+            ("x (default: 0 - same as --n-ubatch)", "0"),
+            ("x (default: -1; -1 = disabled)", "-1"),
+            ("x (default: 8192,)", "8192"),
+            ("x (default: 'auto')", "auto"),
+        ] {
+            assert_eq!(default_value(text).as_deref(), Some(expected), "{text}");
+        }
+    }
+
+    #[test]
+    fn default_value_keeps_a_real_list() {
+        // Los samplers van separados por «;» y no son una explicación.
+        let text = "x (default: penalties;dry;top_k;temperature)";
+        assert_eq!(
+            default_value(text).as_deref(),
+            Some("penalties;dry;top_k;temperature")
+        );
     }
 }

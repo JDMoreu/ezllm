@@ -4,31 +4,35 @@ import {
   Boxes,
   Cpu,
   ExternalLink,
-  FolderOpen,
   Gauge,
-  Globe2,
   Gpu,
   HardDrive,
   Play,
+  Settings2,
 } from "lucide-react";
 import { open } from "@tauri-apps/plugin-dialog";
 import { openUrl } from "@tauri-apps/plugin-opener";
+import { getCurrentWebview } from "@tauri-apps/api/webview";
 
 import { api } from "./lib/api";
 import { ToastProvider, useToast } from "./components/ui";
 import { Sparkline } from "./components/Telemetry";
 import WindowControls from "./components/WindowControls";
 import { Logo } from "./components/Logo";
+import DownloadBar from "./components/DownloadBar";
+import ConfigBar from "./components/ConfigBar";
 import { basename, dirname, formatBytes } from "./lib/format";
 import { languageFrom, setLanguage, t, type Language } from "./lib/i18n";
+import { useDownloads } from "./lib/useDownloads";
 import { useTelemetry } from "./lib/useTelemetry";
 import type { AppConfig, HardwareReport, InstalledBuild, ServerStatus } from "./types";
 
 import ReleasesView from "./views/ReleasesView";
 import DeployView from "./views/DeployView";
 import ModelsView from "./views/ModelsView";
+import SettingsView from "./views/SettingsView";
 
-type WorkspaceTab = "run" | "models" | "runtime";
+type WorkspaceTab = "run" | "models" | "runtime" | "settings";
 
 const WORKSPACE_TABS: {
   id: WorkspaceTab;
@@ -38,6 +42,7 @@ const WORKSPACE_TABS: {
   { id: "run", label: "Ejecutar", icon: Play },
   { id: "models", label: "Modelos", icon: Boxes },
   { id: "runtime", label: "Motor", icon: Cpu },
+  { id: "settings", label: "Ajustes", icon: Settings2 },
 ];
 
 function Shell() {
@@ -49,13 +54,19 @@ function Shell() {
   const [installed, setInstalled] = useState<InstalledBuild[]>([]);
   const [server, setServer] = useState<ServerStatus | null>(null);
   const [modelsDir, setModelsDir] = useState<string>("");
-  const [configPath, setConfigPath] = useState<string>("");
-  const [selectedModel, setSelectedModel] = useState<string | null>(null);
+  const [configPath, setConfigPath] = useState<string>("");  const [selectedModel, setSelectedModel] = useState<string | null>(null);
   const [selectedMmproj, setSelectedMmproj] = useState<string | null>(null);
   const [selectedDraft, setSelectedDraft] = useState<string | null>(null);
   const [tab, setTab] = useState<WorkspaceTab>("run");
+  const [visited, setVisited] = useState<WorkspaceTab[]>(["run"]);
   const [busy, setBusy] = useState(false);
   const tel = useTelemetry(true, 1);
+  const downloads = useDownloads(modelsDir);
+
+  const showTab = useCallback((next: WorkspaceTab) => {
+    setTab(next);
+    setVisited((current) => (current.includes(next) ? current : [...current, next]));
+  }, []);
 
   useEffect(() => {
     let alive = true;
@@ -161,6 +172,19 @@ function Shell() {
   }, []);
 
   const handleStart = useCallback(async () => {
+    const currentConfig = configRef.current;
+    const runtimeReady =
+      !!currentConfig?.llamaDir || installed.length > 0 || !!hardware?.llamaServer;
+    if (!runtimeReady) {
+      toast.push("Primero instala un motor de llama.cpp", "info");
+      showTab("runtime");
+      return;
+    }
+    if (!selectedModel) {
+      toast.push("Elige o descarga un modelo antes de iniciar", "info");
+      showTab("models");
+      return;
+    }
     setBusy(true);
     try {
       // Se arranca exactamente con lo que hay en pantalla. Reaplicar el
@@ -172,6 +196,7 @@ function Shell() {
       }
       const current = configRef.current;
       if (pendingSave && current) await api.setConfig(current);
+      tel.resetSpeed();
       const st = await api.startServer(selectedModel, selectedMmproj, selectedDraft);
       setServer(st);
       const localHost =
@@ -181,30 +206,93 @@ function Shell() {
       toast.push(
         st.health
           ? `Modelo desplegado · http://${localHost}:${st.port}`
-          : "El servidor arrancó; todavía no responde.",
-        st.health ? "success" : "info",
+          : "El servidor arrancó pero no responde. Revisa la salida.",
+        st.health ? "success" : "danger",
       );
       refreshHardware();
     } catch (e) {
-      toast.push(`No se pudo arrancar el servidor: ${String(e)}`, "danger");
+      const message = String(e);
+      toast.push(`No se pudo arrancar: ${message.split("\n")[0]}`, "danger");
     } finally {
       setBusy(false);
     }
-  }, [selectedModel, selectedMmproj, selectedDraft, toast, refreshHardware]);
+  }, [
+    selectedModel,
+    selectedMmproj,
+    selectedDraft,
+    toast,
+    refreshHardware,
+    installed,
+    hardware,
+    showTab,
+    tel,
+  ]);
 
   const handleStop = useCallback(async () => {
     setBusy(true);
     try {
       const st = await api.stopServer();
+      tel.resetSpeed();
       setServer(st);
       toast.push("Servidor detenido", "info");
       refreshHardware();
+      return true;
     } catch (e) {
       toast.push(`No se pudo parar el servidor: ${String(e)}`, "danger");
+      return false;
     } finally {
       setBusy(false);
     }
-  }, [toast, refreshHardware]);
+  }, [toast, refreshHardware, tel]);
+
+  /** Reinicia con los flags que hay en pantalla, sin pasar por Detener → Iniciar. */
+  const handleRestart = useCallback(async () => {
+    if (!selectedModel) return;
+    setBusy(true);
+    try {
+      await api.stopServer();
+      tel.resetSpeed();
+      const st = await api.startServer(selectedModel, selectedMmproj, selectedDraft);
+      setServer(st);
+      toast.push(
+        st.health ? "Modelo reiniciado" : "El modelo no responde. Revisa la salida.",
+        st.health ? "success" : "danger",
+      );
+      refreshHardware();
+    } catch (e) {
+      const message = String(e);
+      toast.push(`No se pudo reiniciar: ${message.split("\n")[0]}`, "danger");
+    } finally {
+      setBusy(false);
+    }
+  }, [selectedModel, selectedMmproj, selectedDraft, toast, refreshHardware, tel]);
+
+  // Atajos de experto: no añaden ruido a la interfaz y evitan el ratón en
+  // las dos acciones más repetidas (cambiar de vista y arrancar/parar).
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      const meta = event.ctrlKey || event.metaKey;
+      if (!meta) return;
+      if (event.key >= "1" && event.key <= String(WORKSPACE_TABS.length)) {
+        event.preventDefault();
+        showTab(WORKSPACE_TABS[Number(event.key) - 1].id);
+        return;
+      }
+      if (event.key.toLowerCase() === "k") {
+        event.preventDefault();
+        showTab("models");
+        requestAnimationFrame(() => document.getElementById("model-search")?.focus());
+        return;
+      }
+      if (event.key === "Enter") {
+        event.preventDefault();
+        if (server?.running) void handleStop();
+        else void handleStart();
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [handleStart, handleStop, server?.running, showTab]);
 
   const onModelPicked = useCallback(
     (model: string | null, mmproj: string | null, draft: string | null) => {
@@ -227,10 +315,52 @@ function Shell() {
   const useModelForRun = useCallback(
     (model: string, mmproj: string | null, draft: string | null) => {
       onModelPicked(model, mmproj, draft);
-      setTab("run");
+      showTab("run");
     },
-    [onModelPicked],
+    [onModelPicked, showTab],
   );
+
+  // Arrastrar un GGUF a la ventana lo asigna sin abrir el explorador. El rol
+  // se deduce del nombre; si es dudoso, cae en el modelo principal.
+  useEffect(() => {
+    let unlisten: (() => void) | undefined;
+    let disposed = false;
+    getCurrentWebview()
+      .onDragDropEvent((event) => {
+        if (event.payload.type !== "drop") return;
+        const paths = event.payload.paths.filter((path) => /\.gguf$/i.test(path));
+        if (paths.length === 0) return;
+        const path = paths[0];
+        const lower = path.toLowerCase();
+        if (lower.includes("mmproj")) {
+          onModelPicked(selectedModel, path, selectedDraft);
+        } else if (lower.includes("mtp") || lower.includes("draft")) {
+          onModelPicked(selectedModel, selectedMmproj, path);
+        } else {
+          onModelPicked(path, selectedMmproj, selectedDraft);
+        }
+        showTab("run");
+        toast.push(`Asignado ${basename(path)}`, "success");
+      })
+      .then((fn) => {
+        if (disposed) fn();
+        else unlisten = fn;
+      })
+      .catch(() => {
+        // En un navegador normal no hay webview de Tauri: se ignora.
+      });
+    return () => {
+      disposed = true;
+      unlisten?.();
+    };
+  }, [
+    onModelPicked,
+    selectedModel,
+    selectedMmproj,
+    selectedDraft,
+    showTab,
+    toast,
+  ]);
 
   const pickModelFile = useCallback(
     async (slot: "primary" | "mmproj" | "draft") => {
@@ -341,6 +471,18 @@ function Shell() {
   setLanguage(language);
   const llamaDir = config?.llamaDir ?? null;
 
+  // Preparación real, no una promesa: sin runtime o sin modelo, «Iniciar
+  // modelo» no puede hacer lo que dice. La UI usa esto para guiar, no para
+  // dejar un botón muerto.
+  const hasRuntime =
+    !!llamaDir || installed.length > 0 || !!hardware?.llamaServer;
+  const hasModel = !!selectedModel;
+  const idleLabel = !hasRuntime
+    ? t("Sin motor")
+    : !hasModel
+      ? t("Sin modelo")
+      : t("Listo para arrancar");
+
   // El build activo es el que contiene el binario reportado por telemetría,
   // no el primero de la lista (con varios builds se descuelcan).
   const normalizePath = (value: string) => value.replace(/\//g, "\\").toUpperCase();
@@ -380,6 +522,9 @@ function Shell() {
   const ramRatio = ramTotal > 0 ? ramUsed / ramTotal : 0;
   const vramRatio = vramTotalMib > 0 ? vramUsedMib / vramTotalMib : 0;
   const cpuTone = cpuPct > 90 ? "danger" : cpuPct > 70 ? "warn" : undefined;
+  const gpuPct = snap?.gpu?.percent ?? null;
+  const gpuTone =
+    gpuPct === null ? undefined : gpuPct > 90 ? "danger" : gpuPct > 70 ? "warn" : undefined;
   const ramSpeed = hardware?.ram.speedMhz ?? null;
   const acceleratorLabel = !hardware
     ? "—"
@@ -420,50 +565,16 @@ function Shell() {
           </h1>
         </div>
 
-        <nav
-          className="workspace-tabs"
-          role="tablist"
-          aria-label="Espacio de trabajo"
-          onKeyDown={(event) => {
-            if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
-            event.preventDefault();
-            const current = WORKSPACE_TABS.findIndex((item) => item.id === tab);
-            const nextIndex =
-              event.key === "Home"
-                ? 0
-                : event.key === "End"
-                  ? WORKSPACE_TABS.length - 1
-                  : (current +
-                      (event.key === "ArrowRight" ? 1 : -1) +
-                      WORKSPACE_TABS.length) %
-                    WORKSPACE_TABS.length;
-            const next = WORKSPACE_TABS[nextIndex];
-            setTab(next.id);
-            requestAnimationFrame(() =>
-              document.getElementById(`workspace-tab-${next.id}`)?.focus(),
-            );
-          }}
-        >
-          {WORKSPACE_TABS.map((item) => {
-            const Icon = item.icon;
-            return (
-              <button
-                key={item.id}
-                id={`workspace-tab-${item.id}`}
-                type="button"
-                role="tab"
-                aria-selected={tab === item.id}
-                aria-controls={`workspace-panel-${item.id}`}
-                tabIndex={tab === item.id ? 0 : -1}
-                onClick={() => setTab(item.id)}
-                className={clsx("workspace-tab", tab === item.id && "workspace-tab-on")}
-              >
-                <Icon size={13} />
-                {t(item.label)}
-              </button>
-            );
-          })}
-        </nav>
+        {config && (
+          <ConfigBar
+            config={config}
+            selectedModel={selectedModel}
+            selectedMmproj={selectedMmproj}
+            selectedDraft={selectedDraft}
+            onSelect={onModelPicked}
+            onConfigChange={saveConfig}
+          />
+        )}
 
         <div className="app-titlebar-grow" data-tauri-drag-region />
 
@@ -496,6 +607,56 @@ function Shell() {
             reúne el estado que antes estaba repartido entre las tres vistas.
             ================================================================== */}
         <aside className="app-sidebar flex w-[16.5rem] shrink-0 flex-col border-r border-base-800 bg-base-950">
+          <nav
+            className="sidebar-nav"
+            role="tablist"
+            aria-label="Espacio de trabajo"
+            onKeyDown={(event) => {
+              if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
+              event.preventDefault();
+              const current = WORKSPACE_TABS.findIndex((item) => item.id === tab);
+              const nextIndex =
+                event.key === "Home"
+                  ? 0
+                  : event.key === "End"
+                    ? WORKSPACE_TABS.length - 1
+                    : (current +
+                        (event.key === "ArrowRight" ? 1 : -1) +
+                        WORKSPACE_TABS.length) %
+                      WORKSPACE_TABS.length;
+              const next = WORKSPACE_TABS[nextIndex];
+              setTab(next.id);
+              setVisited((current) =>
+                current.includes(next.id) ? current : [...current, next.id],
+              );
+              requestAnimationFrame(() =>
+                document.getElementById(`workspace-tab-${next.id}`)?.focus(),
+              );
+            }}
+          >
+            {WORKSPACE_TABS.map((item) => {
+              const Icon = item.icon;
+              return (
+                <button
+                  key={item.id}
+                  id={`workspace-tab-${item.id}`}
+                  type="button"
+                  role="tab"
+                  aria-selected={tab === item.id}
+                  aria-controls={`workspace-panel-${item.id}`}
+                  tabIndex={tab === item.id ? 0 : -1}
+                  onClick={() => showTab(item.id)}
+                  className={clsx(
+                    "sidebar-nav-item",
+                    tab === item.id && "sidebar-nav-item-on",
+                  )}
+                >
+                  <Icon size={13} />
+                  {t(item.label)}
+                </button>
+              );
+            })}
+          </nav>
           {/* --- Entorno: runtime, hardware y telemetría viva --- */}
         <div className="app-sidebar-machine min-h-0 flex-1 overflow-y-auto">
           <div className="p-3">
@@ -586,13 +747,25 @@ function Shell() {
 
               {dedicatedGpu && (
                 <div>
-                  <p
-                    className="flex items-center gap-1.5 truncate text-meta text-ink-300"
-                    title={dedicatedGpu.name}
-                  >
-                    <Gpu size={11} className="shrink-0 text-ink-500" />
-                    {dedicatedGpu.name}
-                  </p>
+                  <div className="flex items-baseline justify-between gap-2">
+                    <p
+                      className="flex min-w-0 items-center gap-1.5 truncate text-meta text-ink-300"
+                      title={dedicatedGpu.name}
+                    >
+                      <Gpu size={11} className="shrink-0 text-ink-500" />
+                      {dedicatedGpu.name}
+                    </p>
+                    <span className="mono shrink-0 text-meta text-ink-200">
+                      {gpuPct !== null ? `${gpuPct.toFixed(0)}%` : "—"}
+                    </span>
+                  </div>
+                  <Sparkline
+                    samples={tel.gpuSeries.values()}
+                    height={20}
+                    tone={gpuTone}
+                    label={t("Uso de GPU")}
+                    className="mt-1"
+                  />
                   {vramTotalMib > 0 && (
                     <>
                       <div className="mt-0.5 flex items-baseline justify-between gap-2 text-meta">
@@ -619,110 +792,6 @@ function Shell() {
 
             </div>
           </div>
-
-          <div className="border-t border-base-800 p-3">
-            <div className="mb-2 flex items-center justify-between gap-2">
-              <span className="flex items-center gap-1.5 text-meta font-medium text-ink-300">
-                <FolderOpen size={12} className="text-ink-500" />
-                {t("Rutas")}
-              </span>
-            </div>
-            <div className="space-y-1.5">
-              <div className="flex items-center gap-1">
-                <span className="w-[4.25rem] shrink-0 text-meta text-ink-500">{t("Modelos")}</span>
-                <button
-                  onClick={() => void (modelsDir ? openModelsFolder() : pickModelsFolder())}
-                  className="min-w-0 flex-1 cursor-pointer truncate text-left text-meta text-ink-200 hover:text-accent-300"
-                  title={modelsDir ? "Abrir carpeta de modelos" : "Elegir carpeta de modelos"}
-                >
-                  {modelsDir ? basename(modelsDir) : "Sin asignar"}
-                </button>
-                <button
-                  onClick={() => void pickModelsFolder()}
-                  className="btn-quiet flex h-5 w-5 shrink-0 cursor-pointer items-center justify-center rounded-control text-ink-400 hover:text-ink-100"
-                  title="Elegir carpeta de modelos"
-                  aria-label="Elegir carpeta de modelos"
-                >
-                  <FolderOpen size={12} />
-                </button>
-              </div>
-              <div className="flex items-center gap-1">
-                <span className="w-[4.25rem] shrink-0 text-meta text-ink-500">{t("Binarios")}</span>
-                <button
-                  onClick={() =>
-                    void (config?.llamaDir ?? installed[0]?.dir
-                      ? openLlamaFolder()
-                      : pickLlamaFolder())
-                  }
-                  className="min-w-0 flex-1 cursor-pointer truncate text-left text-meta text-ink-200 hover:text-accent-300"
-                  title={
-                    config?.llamaDir ?? installed[0]?.dir
-                      ? "Abrir carpeta de llama.cpp"
-                      : "Elegir carpeta de llama.cpp"
-                  }
-                >
-                  {config?.llamaDir ?? installed[0]?.dir
-                    ? basename(config?.llamaDir ?? installed[0]?.dir ?? "")
-                    : "Sin asignar"}
-                </button>
-                <button
-                  onClick={() => void pickLlamaFolder()}
-                  className="btn-quiet flex h-5 w-5 shrink-0 cursor-pointer items-center justify-center rounded-control text-ink-400 hover:text-ink-100"
-                  title="Elegir carpeta de llama.cpp"
-                  aria-label="Elegir carpeta de llama.cpp"
-                >
-                  <FolderOpen size={12} />
-                </button>
-              </div>
-              <div className="flex items-center gap-1">
-                <span className="w-[4.25rem] shrink-0 text-meta text-ink-500">{t("Config")}</span>
-                <button
-                  onClick={() => void openConfigFolder()}
-                  className="min-w-0 flex-1 cursor-pointer truncate text-left text-meta text-ink-200 hover:text-accent-300"
-                  title={configPath || "Ruta de config.json"}
-                  disabled={!configPath}
-                >
-                  {configPath ? basename(configPath) : "—"}
-                </button>
-                <button
-                  onClick={() => void openConfigFolder()}
-                  className="btn-quiet flex h-5 w-5 shrink-0 cursor-pointer items-center justify-center rounded-control text-ink-400 hover:text-ink-100 disabled:cursor-not-allowed disabled:opacity-40"
-                  title="Abrir carpeta de configuración"
-                  aria-label="Abrir carpeta de configuración"
-                  disabled={!configPath}
-                >
-                  <FolderOpen size={12} />
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <div className="shrink-0 border-t border-base-800 px-3 py-2.5">
-          <div className="flex items-center justify-between gap-2">
-            <span className="app-sidebar-section flex items-center gap-1.5 text-meta font-medium text-ink-300">
-              <Globe2 size={12} className="text-ink-500" />
-              {t("Idioma")}
-            </span>
-            <div className="language-switch" role="group" aria-label={t("Idioma")}>
-              <button
-                type="button"
-                onClick={() => changeLanguage("es")}
-                className={clsx(language === "es" && "language-switch-on")}
-                aria-pressed={language === "es"}
-              >
-                Español
-              </button>
-              <button
-                type="button"
-                onClick={() => changeLanguage("en")}
-                className={clsx(language === "en" && "language-switch-on")}
-                aria-pressed={language === "en"}
-              >
-                English
-              </button>
-            </div>
-          </div>
         </div>
 
         {/* --- Control del servidor: único en toda la app --- */}
@@ -746,11 +815,11 @@ function Shell() {
 
           <div className="app-sidebar-section rounded-control border border-base-800 bg-base-900/55 px-2.5 py-2">
             <div className="flex items-center justify-between gap-2">
-              <span className="text-[0.625rem] text-ink-500">{t("IP local")}</span>
+              <span className="text-meta text-ink-500">{t("IP local")}</span>
               <p className="mono min-w-0 flex-1 truncate text-right text-meta text-ink-200">
                 {server?.running
                   ? `${localServerHost}:${server.port}`
-                  : t("Sin proceso activo")}
+                  : t("Servidor detenido")}
               </p>
               {server?.running && (
                 <button
@@ -765,9 +834,9 @@ function Shell() {
             </div>
             {server?.running && serverApiUrl && (
               <div className="mt-1.5 flex items-baseline justify-between gap-2">
-                <span className="text-[0.625rem] text-ink-500">{t("API")}</span>
+                <span className="text-meta text-ink-500">{t("API")}</span>
                 <span
-                  className="mono min-w-0 truncate text-right text-[0.625rem] text-ink-300"
+                  className="mono min-w-0 truncate text-right text-meta text-ink-300"
                   title={serverApiUrl}
                 >
                   {serverApiUrl}
@@ -778,15 +847,15 @@ function Shell() {
               <button
                 type="button"
                 onClick={() => void openChat()}
-                className="mt-1.5 flex w-full cursor-pointer items-center justify-center gap-1.5 rounded-control border border-accent-500/30 bg-accent-500/10 px-2 py-1 text-[0.625rem] font-medium text-accent-300 hover:bg-accent-500/20"
+                className="mt-1.5 flex w-full cursor-pointer items-center justify-center gap-1.5 rounded-control border border-accent-500/30 bg-accent-500/10 px-2 py-1.5 text-label font-medium text-accent-300 hover:bg-accent-500/20"
                 title="Abrir el chat web de llama-server"
               >
-                <ExternalLink size={11} />
+                <ExternalLink size={12} />
                 {t("Abrir chat")}
               </button>
             )}
             <p
-              className="mt-1.5 truncate text-[0.625rem] text-ink-500"
+              className="mt-1.5 truncate text-meta text-ink-500"
               title={server?.models.join(", ") || undefined}
             >
               {server?.running
@@ -795,10 +864,10 @@ function Shell() {
                   : server.health
                     ? t("Modelo desplegado")
                     : t("Cargando el modelo…")
-                : t("Listo para arrancar")}
+                : idleLabel}
             </p>
             {server?.running && tel.speed && (
-              <p className="mono mt-1 text-[0.625rem] text-ink-400">
+              <p className="mono mt-1 text-meta text-ink-400">
                 {tel.speed.predictedPerSecond.toFixed(1)} tok/s
               </p>
             )}
@@ -808,47 +877,97 @@ function Shell() {
 
         {/* --- Contenido: tres espacios de trabajo, una sola barra --- */}
         <main id="main" tabIndex={-1} className="flex min-h-0 min-w-0 flex-1 flex-col">
+          <DownloadBar downloads={downloads} onOpen={() => showTab("models")} />
           <div className="min-h-0 flex-1 overflow-y-auto">
-            <div
-              id={`workspace-panel-${tab}`}
-              role="tabpanel"
-              aria-labelledby={`workspace-tab-${tab}`}
-              className={clsx(
-                "app-content mx-auto max-w-[68rem] px-6 py-5 outline-none",
-                tab === "models" ? "flex h-full min-h-0 flex-col" : "space-y-5",
-              )}
-            >
-              {tab === "run" && (
-                <DeployView
-                  config={config}
-                  server={server}
-                  selectedModel={selectedModel}
-                  selectedMmproj={selectedMmproj}
-                  selectedDraft={selectedDraft}
-                  onSelect={onModelPicked}
-                  onConfigChange={saveConfig}
-                  onPickModel={(slot) => void pickModelFile(slot)}
-                  onStart={handleStart}
-                  onStop={handleStop}
-                  serverBusy={busy}
-                />
-              )}
-              {tab === "models" && (
-                <ModelsView
-                  modelsDir={modelsDir}
-                  onUseModel={useModelForRun}
-                />
-              )}
-              {tab === "runtime" && (
-                <ReleasesView
-                  onInstalledChange={refreshInstalled}
-                  onPickLlamaFolder={pickLlamaFolder}
-                  onUseBuild={useLlamaBuild}
-                  serverRunning={!!server?.running}
-                  embedded
-                />
-              )}
-            </div>
+            {WORKSPACE_TABS.map((item) => {
+              const active = tab === item.id;
+              const mounted = visited.includes(item.id);
+              return (
+                <div
+                  key={item.id}
+                  id={`workspace-panel-${item.id}`}
+                  role="tabpanel"
+                  aria-labelledby={`workspace-tab-${item.id}`}
+                  tabIndex={-1}
+                  className={
+                    active
+                      ? clsx(
+                          "app-content mx-auto max-w-[68rem] px-6 py-5 outline-none",
+                          item.id === "models"
+                            ? "flex h-full min-h-0 flex-col"
+                            : "space-y-5",
+                        )
+                      : "hidden"
+                  }
+                >
+                  {mounted && item.id === "run" && (
+                    <DeployView
+                      config={config}
+                      server={server}
+                      selectedModel={selectedModel}
+                      selectedMmproj={selectedMmproj}
+                      selectedDraft={selectedDraft}
+                      onSelect={onModelPicked}
+                      onConfigChange={saveConfig}
+                      onPickModel={(slot) => void pickModelFile(slot)}
+                      onStart={handleStart}
+                      onStop={handleStop}
+                      onRestart={handleRestart}
+                      onOpenChat={() => void openChat()}
+                      chatAvailable={!!(server?.running && server.health && serverBaseUrl)}
+                      onNavigate={showTab}
+                      hasRuntime={hasRuntime}
+                      hasModel={hasModel}
+                      vramTotalMib={vramTotalMib}
+                      ramAvailableGb={hardware?.ram.availableGb ?? 0}
+                      serverBusy={busy}
+                    />
+                  )}
+                  {mounted && item.id === "models" && (
+                    <ModelsView
+                      modelsDir={modelsDir}
+                      onUseModel={useModelForRun}
+                      downloads={downloads}
+                      vramTotalMib={vramTotalMib}
+                    />
+                  )}
+                  {mounted && item.id === "runtime" && (
+                    <ReleasesView
+                      onInstalledChange={refreshInstalled}
+                      onPickLlamaFolder={pickLlamaFolder}
+                      onUseBuild={useLlamaBuild}
+                      onStopServer={handleStop}
+                      serverRunning={!!server?.running}
+                      embedded
+                    />
+                  )}
+                  {mounted && item.id === "settings" && (
+                    <SettingsView
+                      modelsDir={modelsDir}
+                      llamaDir={config?.llamaDir ?? installed[0]?.dir ?? ""}
+                      configPath={configPath}
+                      language={language}
+                      githubToken={config?.githubToken ?? ""}
+                      onChangeLanguage={changeLanguage}
+                      onChangeToken={(token) => {
+                        const current = configRef.current;
+                        if (!current) return;
+                        saveConfig({ ...current, githubToken: token || null });
+                        toast.push(
+                          "Token de GitHub guardado. Pulsa Actualizar en Motor.",
+                          "success",
+                        );
+                      }}
+                      onPickModels={() => void pickModelsFolder()}
+                      onPickLlama={() => void pickLlamaFolder()}
+                      onOpenModels={() => void openModelsFolder()}
+                      onOpenLlama={() => void openLlamaFolder()}
+                      onOpenConfig={() => void openConfigFolder()}
+                    />
+                  )}
+                </div>
+              );
+            })}
           </div>
         </main>
       </div>

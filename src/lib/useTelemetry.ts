@@ -62,8 +62,11 @@ export interface TelemetryState {
   cpuSeries: Ring;
   ramSeries: Ring;
   vramSeries: Ring;
+  gpuSeries: Ring;
   /** Mide la velocidad real contra el servidor (una completion de prueba). */
   measureSpeed: () => Promise<void>;
+  /** Descarta la última medida: al parar o cambiar de servidor deja de ser válida. */
+  resetSpeed: () => void;
   /** Velocidad de refresco en Hz. */
   hz: number;
   /** Pausa el sondeo (p. ej. cuando la ventana no está visible). */
@@ -83,6 +86,7 @@ export function useTelemetry(active: boolean, hz = 1): TelemetryState {
   const cpuSeries = useRef(new Ring(MAX_SAMPLES)).current;
   const ramSeries = useRef(new Ring(MAX_SAMPLES)).current;
   const vramSeries = useRef(new Ring(MAX_SAMPLES)).current;
+  const gpuSeries = useRef(new Ring(MAX_SAMPLES)).current;
 
   // Última VRAM conocida, para no relanzar el proceso cada segundo.
   const lastGpu = useRef<Telemetry["gpus"]>([]);
@@ -96,6 +100,8 @@ export function useTelemetry(active: boolean, hz = 1): TelemetryState {
       // El servidor puede estar apagándose: se ignora.
     }
   }, []);
+
+  const resetSpeed = useCallback(() => setSpeed(null), []);
 
   useEffect(() => {
     if (!active) return;
@@ -118,6 +124,7 @@ export function useTelemetry(active: boolean, hz = 1): TelemetryState {
         setSnapshot(snap);
         cpuSeries.push(snap.cpu.percent, now);
         ramSeries.push(snap.ram.usedBytes / snap.ram.totalBytes, now);
+        if (snap.gpu) gpuSeries.push(snap.gpu.percent, now);
         const vramUsed = snap.gpus.reduce(
           (acc, g) => acc + (g.vramTotalMib - g.vramFreeMib),
           0,
@@ -135,7 +142,7 @@ export function useTelemetry(active: boolean, hz = 1): TelemetryState {
       alive = false;
       clearInterval(id);
     };
-  }, [active, hz, paused, cpuSeries, ramSeries, vramSeries]);
+  }, [active, hz, paused, cpuSeries, ramSeries, vramSeries, gpuSeries]);
 
   // Los slots del servidor se consultan aparte: es una llamada HTTP.
   useEffect(() => {
@@ -168,9 +175,11 @@ export function useTelemetry(active: boolean, hz = 1): TelemetryState {
     slots,
     speed,
     measureSpeed,
+    resetSpeed,
     cpuSeries,
     ramSeries,
     vramSeries,
+    gpuSeries,
     hz,
     paused,
   };

@@ -27,6 +27,12 @@ import {
   useToast,
 } from "../components/ui";
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+} from "@/components/ui-kit/select";
+import {
   backendLabel,
   dirname,
   formatBytes,
@@ -46,12 +52,14 @@ export default function ReleasesView({
   onInstalledChange,
   onPickLlamaFolder,
   onUseBuild,
+  onStopServer,
   serverRunning = false,
   embedded = false,
 }: {
   onInstalledChange?: () => void;
   onPickLlamaFolder?: () => Promise<boolean>;
   onUseBuild?: (build: InstalledBuild) => void;
+  onStopServer?: () => Promise<unknown> | void;
   serverRunning?: boolean;
   embedded?: boolean;
 }) {
@@ -66,32 +74,42 @@ export default function ReleasesView({
   const [installing, setInstalling] = useState<string | null>(null);
   const [switching, setSwitching] = useState<string | null>(null);
   const [pendingDelete, setPendingDelete] = useState<string | null>(null);
-  const [channel, setChannel] = useState<"nightly" | "stable">("nightly");
+  const [channel, setChannel] = useState<"nightly" | "stable">("stable");
   const [stable, setStable] = useState<StableRelease[]>([]);
   const [loadingStable, setLoadingStable] = useState(false);
   const [showAll, setShowAll] = useState(false);
   const [showAllStable, setShowAllStable] = useState(false);
-  const [showAllAssets, setShowAllAssets] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
     setError(null);
-    try {
-      const [rels, inst, serverPath] = await Promise.all([
-        api.listReleases(12),
-        api.listInstalled(),
-        api.llamaServerPath().catch(() => null),
-      ]);
+    // Las versiones instaladas son locales: no deben desaparecer porque
+    // GitHub limite las peticiones. Cada fuente se resuelve por separado.
+    const [instResult, serverResult, relResult] = await Promise.allSettled([
+      api.listInstalled(),
+      api.llamaServerPath(),
+      api.listReleases(12),
+    ]);
+
+    if (instResult.status === "fulfilled") setInstalled(instResult.value);
+    if (serverResult.status === "fulfilled") setActiveServer(serverResult.value);
+
+    if (relResult.status === "fulfilled") {
+      const rels = relResult.value;
       setReleases(rels);
-      setInstalled(inst);
-      setActiveServer(serverPath);
-      // Abre la primera release para que el usuario vea las opciones sin clic.
-      setExpanded((prev) => prev ?? rels[0]?.tag ?? null);
-    } catch (e) {
-      setError(String(e));
-    } finally {
-      setLoading(false);
+      // Abre la primera release que realmente tenga binarios para este equipo.
+      const installable = rels.filter((rel) =>
+        rel.assets.some((asset) => asset.compatible && !asset.isCudart),
+      );
+      setExpanded((prev) =>
+        installable.some((rel) => rel.tag === prev)
+          ? prev
+          : (installable[0]?.tag ?? null),
+      );
+    } else {
+      setError(friendlyGitHubError(relResult.reason));
     }
+    setLoading(false);
   }, []);
 
   useEffect(() => {
@@ -100,26 +118,20 @@ export default function ReleasesView({
 
   // Las releases estables se piden aparte: cada una necesita descargar su
   // nightly-tag.txt para saber que tag trae los binarios.
-  useEffect(() => {
-    if (channel !== "stable") return;
-    let alive = true;
+  const loadStable = useCallback(async () => {
     setLoadingStable(true);
-    api
-      .listStableReleases(8)
-      .then((s) => {
-        if (!alive) return;
-        setStable(s);
-      })
-      .catch(() => {
-        if (alive) setStable([]);
-      })
-      .finally(() => {
-        if (alive) setLoadingStable(false);
-      });
-    return () => {
-      alive = false;
-    };
-  }, [channel]);
+    try {
+      setStable(await api.listStableReleases(8));
+    } catch {
+      setStable([]);
+    } finally {
+      setLoadingStable(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (channel === "stable") void loadStable();
+  }, [channel, loadStable]);
 
   useEffect(() => onInstallProgress(setProgress), []);
 
@@ -180,8 +192,15 @@ export default function ReleasesView({
     [toast, refreshInstalled, onInstalledChange],
   );
 
-  const visibleReleases = embedded && !showAll ? releases.slice(0, 1) : releases;
-  const visibleStable = embedded && !showAllStable ? stable.slice(0, 1) : stable;
+  const installableReleases = releases.filter((rel) =>
+    rel.assets.some((asset) => asset.compatible && !asset.isCudart),
+  );
+  const expandedTag = installableReleases.some((rel) => rel.tag === expanded)
+    ? expanded
+    : (installableReleases[0]?.tag ?? null);
+  const visibleReleases =
+    embedded && !showAll ? installableReleases.slice(0, 6) : installableReleases;
+  const visibleStable = embedded && !showAllStable ? stable.slice(0, 4) : stable;
   const activeTag =
     installed.find(
       (build) =>
@@ -203,15 +222,22 @@ export default function ReleasesView({
 
   const useBuild = useCallback(
     async (build: InstalledBuild) => {
-      if (!onUseBuild || serverRunning) return;
+      if (!onUseBuild) return;
       setSwitching(build.tag);
-      onUseBuild(build);
-      await new Promise((resolve) => setTimeout(resolve, 450));
-      await refreshInstalled();
-      onInstalledChange?.();
-      setSwitching(null);
+      try {
+        if (serverRunning && onStopServer) {
+          const stopped = await onStopServer();
+          if (stopped === false) return;
+        }
+        onUseBuild(build);
+        await new Promise((resolve) => setTimeout(resolve, 450));
+        await refreshInstalled();
+        onInstalledChange?.();
+      } finally {
+        setSwitching(null);
+      }
     },
-    [onUseBuild, serverRunning, refreshInstalled, onInstalledChange],
+    [onUseBuild, onStopServer, serverRunning, refreshInstalled, onInstalledChange],
   );
 
   return (
@@ -224,34 +250,28 @@ export default function ReleasesView({
       >
         <div className="flex flex-wrap items-center gap-2">
           <span className="text-meta text-ink-500">{t("Canal")}</span>
-          <div
-            className="flex gap-0.5 rounded-card border border-base-700 bg-base-850 p-0.5"
-            role="group"
-            aria-label="Canal de versión"
+          <Select
+            value={channel}
+            onValueChange={(value) => setChannel(value as "stable" | "nightly")}
           >
-            {(
-              [
-                ["nightly", "Nightly", "La última build de desarrollo"],
-                ["stable", "Estable", "Última versión con etiqueta vX.Y.Z"],
-              ] as const
-            ).map(([id, label, hint]) => (
-              <button
-                key={id}
-                type="button"
-                aria-pressed={channel === id}
-                onClick={() => setChannel(id)}
-                title={hint}
-                className={clsx(
-                  "cursor-pointer rounded-control border px-2.5 py-1 text-label font-medium transition-colors duration-150",
-                  channel === id
-                    ? "border-base-700 bg-base-800 text-ink-100 shadow-[inset_0_1px_0_0_rgb(255_255_255/0.04)]"
-                    : "border-transparent text-ink-400 hover:text-ink-200",
-                )}
-              >
-                {label}
-              </button>
-            ))}
-          </div>
+            <SelectTrigger
+              className="w-[7.5rem]"
+              aria-label={t("Canal")}
+              title={
+                channel === "stable"
+                  ? "Recomendado para empezar: versión con etiqueta vX.Y.Z"
+                  : "La última build de desarrollo; puede romper"
+              }
+            >
+              <span className="min-w-0 flex-1 truncate text-left">
+                {channel === "stable" ? t("Estable") : t("Nightly")}
+              </span>
+            </SelectTrigger>
+            <SelectContent position="popper" align="start" sideOffset={0}>
+              <SelectItem value="stable">{t("Estable")}</SelectItem>
+              <SelectItem value="nightly">{t("Nightly")}</SelectItem>
+            </SelectContent>
+          </Select>
           {onPickLlamaFolder && (
             <Button
               icon={<FolderOpen size={13} />}
@@ -286,8 +306,7 @@ export default function ReleasesView({
         <Alert tone="danger" title={t("No se pudo contactar con GitHub")}>
           {error}
           <p className="mt-1.5">
-            GitHub limita las peticiones anónimas. Espera unos minutos y vuelve a
-            intentarlo.
+            {t("Las versiones instaladas siguen disponibles aunque la lista remota no cargue.")}
           </p>
           <div className="mt-2">
             <Button size="sm" variant="ghost" onClick={() => void load()}>
@@ -315,7 +334,7 @@ export default function ReleasesView({
         {serverRunning && (
           <p className="mb-2 flex items-start gap-1.5 text-label leading-relaxed text-warn-400">
             <Info size={13} className="mt-0.5 shrink-0" aria-hidden />
-            {t("Detén el servidor para cambiar de build.")}
+            {t("Al cambiar de build se detendrá el servidor en marcha.")}
           </p>
         )}
         {loading && installed.length === 0 ? (
@@ -336,9 +355,7 @@ export default function ReleasesView({
                   className="absolute inset-y-2 left-0 w-0.5 rounded-full bg-accent-500"
                   aria-hidden
                 />
-                <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-card bg-accent-600/15 text-accent-400">
-                  <FolderOpen size={14} />
-                </span>
+                <FolderOpen size={14} className="shrink-0 text-accent-400" aria-hidden />
                 <div className="min-w-0 flex-1">
                   <p className="text-label font-medium text-ink-100">{t("Build local")}</p>
                   <p
@@ -348,7 +365,7 @@ export default function ReleasesView({
                     {activeServer ? dirname(activeServer) : ""}
                   </p>
                 </div>
-                <span className="meta-mark meta-mark-accent">
+                <span className="inline-flex items-center gap-1 text-meta font-medium text-ok-400">
                   <CheckCircle2 size={11} />
                   {t("En uso")}
                 </span>
@@ -367,16 +384,14 @@ export default function ReleasesView({
                       aria-hidden
                     />
                   )}
-                  <span
+                  <HardDrive
+                    size={14}
                     className={clsx(
-                      "flex h-7 w-7 shrink-0 items-center justify-center rounded-card",
-                      isActive
-                        ? "bg-accent-600/15 text-accent-400"
-                        : "bg-base-800 text-ink-400",
+                      "shrink-0",
+                      isActive ? "text-accent-400" : "text-ink-500",
                     )}
-                  >
-                    <HardDrive size={14} />
-                  </span>
+                    aria-hidden
+                  />
                   <div className="min-w-0 flex-1">
                     <p className="mono text-label font-medium text-ink-100">{build.tag}</p>
                     <p className="truncate text-label text-ink-500" title={build.dir}>
@@ -384,7 +399,7 @@ export default function ReleasesView({
                     </p>
                   </div>
                   {isActive ? (
-                    <span className="meta-mark meta-mark-accent">
+                    <span className="inline-flex items-center gap-1 text-meta font-medium text-ok-400">
                       <CheckCircle2 size={11} />
                       {t("En uso")}
                     </span>
@@ -395,18 +410,15 @@ export default function ReleasesView({
                         variant="ghost"
                         icon={<Check size={12} />}
                         loading={switching === build.tag}
-                        disabled={
-                          serverRunning ||
-                          (switching !== null && switching !== build.tag)
-                        }
+                        disabled={switching !== null && switching !== build.tag}
                         onClick={() => void useBuild(build)}
                         title={
                           serverRunning
-                            ? t("Detén el servidor para cambiar de build")
+                            ? t("Detener el servidor y usar este build")
                             : t("Usar este build")
                         }
                       >
-                        {t("Usar")}
+                        {serverRunning ? t("Detener y usar") : t("Usar")}
                       </Button>
                     )
                   )}
@@ -434,10 +446,13 @@ export default function ReleasesView({
       {progress && (
         <Card title={`Instalando ${installing ?? ""}`}>
           <div className="space-y-2">
+            <span className="sr-only" role="status" aria-live="polite">
+              {`Instalando · ${progress.phase} · ${progress.percent.toFixed(0)}%`}
+            </span>
             <Meter
               value={progress.downloaded}
               max={progress.total || 1}
-              label={<span className="capitalize">{progress.phase}</span>}
+              label={`${t("Instalando")} · ${progress.phase}`}
               valueLabel={`${progress.percent.toFixed(0)}%`}
             />
             <div className="flex justify-between text-label text-ink-500">
@@ -463,11 +478,21 @@ export default function ReleasesView({
           </p>
 
           {stable.length === 0 && !loadingStable && (
-            <Section title="Sin versiones estables">
-              <p className="py-4 text-center text-body text-ink-400">
-                No se encontraron releases estables.
-              </p>
-            </Section>
+            <Alert tone="warn" title={t("No se pudieron cargar las versiones estables")}>
+              {t("GitHub puede limitar las peticiones anónimas. Las builds nightly siguen disponibles mientras tanto.")}
+              <div className="mt-2 flex flex-wrap gap-2">
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => setChannel("nightly")}
+                >
+                  {t("Ver Nightly")}
+                </Button>
+                <Button size="sm" variant="ghost" onClick={() => void loadStable()}>
+                  {t("Reintentar")}
+                </Button>
+              </div>
+            </Alert>
           )}
 
           {loadingStable && stable.length === 0 && (
@@ -491,15 +516,7 @@ export default function ReleasesView({
               if (oa !== ob) return oa - ob;
               return a.size - b.size;
             });
-            const preferredAssets = s.recommended
-              ? orderedAssets.filter((asset) => asset.name === s.recommended)
-              : [];
-            const visibleAssets =
-              embedded && showAllAssets !== s.tag
-                ? preferredAssets.length > 0
-                  ? preferredAssets
-                  : orderedAssets.slice(0, 1)
-                : orderedAssets;
+            const visibleAssets = orderedAssets;
 
             return (
             <Section
@@ -507,7 +524,10 @@ export default function ReleasesView({
               title={
                 <span className="flex items-center gap-2">
                   <span className="mono">{s.tag}</span>
-                  <span className="meta-mark meta-mark-ok">{t("Estable")}</span>
+                  <span className="inline-flex items-center gap-1 text-meta text-ok-400">
+                    <CheckCircle2 size={10} />
+                    {t("Estable")}
+                  </span>
                 </span>
               }
               description={
@@ -517,7 +537,9 @@ export default function ReleasesView({
                     <>
                       <span aria-hidden>·</span>
                       <span className="mono text-ink-300">{s.nightlyTag}</span>
-                      <span className="meta-mark">build equivalente</span>
+                      <span className="text-meta text-ink-500">
+                        build equivalente
+                      </span>
                     </>
                   )}
                 </span>
@@ -535,30 +557,30 @@ export default function ReleasesView({
                         key={asset.name}
                         className="row flex items-center gap-3 px-1 py-2"
                       >
-                        <span
+                        <Cpu
+                          size={13}
                           className={clsx(
-                            "flex h-7 w-7 shrink-0 items-center justify-center rounded-control",
+                            "shrink-0",
                             asset.name === s.recommended
-                              ? "bg-accent-500/14 text-accent-400"
-                              : "bg-base-850 text-ink-400",
+                              ? "text-accent-400"
+                              : "text-ink-500",
                           )}
-                        >
-                          <Cpu size={13} />
-                        </span>
+                          aria-hidden
+                        />
                         <div className="min-w-0 flex-1">
                           <div className="flex flex-wrap items-center gap-1.5">
                             <span className="text-label font-medium text-ink-100">
                               {backendLabel(asset.backend)}
                             </span>
                             {asset.name === s.recommended && (
-                              <span className="meta-mark meta-mark-accent">
+                              <span className="inline-flex items-center gap-1 text-meta font-medium text-accent-300">
                                 <Zap size={9} />
                                 {t("Recomendado")}
                               </span>
                             )}
                             {asset.sha256 && (
                               <span
-                                className="meta-mark meta-mark-ok"
+                                className="inline-flex items-center gap-1 text-meta text-ok-400"
                                 title={`SHA-256: ${asset.sha256}`}
                               >
                                 <CheckCircle2 size={9} />
@@ -588,27 +610,6 @@ export default function ReleasesView({
                       </li>
                     ))}
                   </ul>
-                  {embedded && orderedAssets.length > 1 && (
-                    <button
-                      onClick={() =>
-                        setShowAllAssets((value) => (value === s.tag ? null : s.tag))
-                      }
-                      className="btn btn-quiet mt-1 inline-flex w-full cursor-pointer items-center justify-center gap-1.5 border-t border-base-800 py-2 text-label text-ink-400 hover:text-ink-100"
-                      aria-expanded={showAllAssets === s.tag}
-                    >
-                      {showAllAssets === s.tag
-                        ? t("Mostrar solo el recomendado")
-                        : `${t("Ver")} ${orderedAssets.length - visibleAssets.length} ${t("paquetes alternativos")}`}
-                      <ChevronDown
-                        size={13}
-                        className={clsx(
-                          "transition-transform duration-200",
-                          showAllAssets === s.tag && "rotate-180",
-                        )}
-                        aria-hidden
-                      />
-                    </button>
-                  )}
                 </>
               )}
             </Section>
@@ -622,8 +623,8 @@ export default function ReleasesView({
               aria-expanded={showAllStable}
             >
               {showAllStable
-                ? t("Mostrar solo la última")
-                : `Ver ${stable.length - 1} versiones estables anteriores`}
+                ? "Mostrar solo las últimas 4"
+                : `Ver ${stable.length - visibleStable.length} versiones anteriores`}
               <ChevronDown
                 size={13}
                 className={clsx(
@@ -655,7 +656,7 @@ export default function ReleasesView({
         )}
 
         {visibleReleases.map((rel) => {
-          const isOpen = expanded === rel.tag;
+          const isOpen = expandedTag === rel.tag;
           const compat = rel.assets.filter((a) => a.compatible && !a.isCudart);
           const recommended = rel.recommended;
           // El recomendado va PRIMERO: es la opcion que el usuario quiere
@@ -669,15 +670,7 @@ export default function ReleasesView({
             if (oa !== ob) return oa - ob;
             return a.size - b.size;
           });
-          const preferredAssets = recommended
-            ? ordered.filter((asset) => asset.name === recommended)
-            : [];
-          const shown =
-            embedded && showAllAssets !== rel.tag
-              ? preferredAssets.length > 0
-                ? preferredAssets
-                : ordered.slice(0, 1)
-              : ordered;
+          const shown = ordered;
 
           return (
             <section key={rel.tag} className="card overflow-hidden">
@@ -695,10 +688,12 @@ export default function ReleasesView({
                         {rel.tag}
                       </span>
                       {rel.prerelease && (
-                        <span className="meta-mark meta-mark-violet">{t("Nightly")}</span>
+                        <span className="text-meta text-violet-400">
+                          {t("Nightly")}
+                        </span>
                       )}
                       {recommended && (
-                        <span className="meta-mark meta-mark-accent">
+                        <span className="inline-flex items-center gap-1 text-meta font-medium text-accent-300">
                           <Zap size={10} />
                           {t("Recomendado")}
                         </span>
@@ -737,11 +732,8 @@ export default function ReleasesView({
                   {compat.length === 0 ? (
                     <div className="px-4 py-5">
                       <Alert tone="warn" title="No hay ningún paquete para este equipo">
-                        Esta release no publica binarios compatibles con{" "}
-                        <span className="mono">
-                          {rel.assets[0]?.os ?? "tu plataforma"}
-                        </span>
-                        . Prueba con otra versión.
+                        Esta release no publica binarios compatibles con este
+                        equipo. Prueba con otra versión.
                       </Alert>
                     </div>
                   ) : (
@@ -757,27 +749,6 @@ export default function ReleasesView({
                           />
                         ))}
                       </ul>
-                      {embedded && ordered.length > 1 && (
-                        <button
-                          onClick={() =>
-                            setShowAllAssets((value) => (value === rel.tag ? null : rel.tag))
-                          }
-                          className="btn btn-quiet inline-flex w-full cursor-pointer items-center justify-center gap-1.5 border-t border-base-800 py-2 text-label text-ink-400 hover:text-ink-100"
-                          aria-expanded={showAllAssets === rel.tag}
-                        >
-                          {showAllAssets === rel.tag
-                            ? t("Mostrar solo el recomendado")
-                            : `${t("Ver")} ${ordered.length - shown.length} ${t("paquetes alternativos")}`}
-                          <ChevronDown
-                            size={13}
-                            className={clsx(
-                              "transition-transform duration-200",
-                              showAllAssets === rel.tag && "rotate-180",
-                            )}
-                            aria-hidden
-                          />
-                        </button>
-                      )}
                     </>
                   )}
                 </div>
@@ -786,15 +757,15 @@ export default function ReleasesView({
           );
         })}
 
-        {embedded && releases.length > 1 && (
+        {embedded && installableReleases.length > 1 && (
           <button
             onClick={() => setShowAll((value) => !value)}
             className="btn btn-quiet inline-flex w-full cursor-pointer items-center justify-center gap-1.5 border border-base-800 py-2 text-label text-ink-400 hover:text-ink-100"
             aria-expanded={showAll}
           >
             {showAll
-              ? t("Mostrar solo la última")
-              : `${t("Ver")} ${releases.length - 1} ${t("versiones anteriores")}`}
+              ? "Mostrar solo las últimas 6"
+              : `${t("Ver")} ${installableReleases.length - visibleReleases.length} ${t("versiones anteriores")}`}
             <ChevronDown
               size={13}
               className={clsx(
@@ -833,6 +804,14 @@ export default function ReleasesView({
 }
 
 /** Orden de presentación de los backends: del más habitual al más raro. */
+function friendlyGitHubError(error: unknown): string {
+  const raw = String(error);
+  if (/403|rate limit|límite de la api/i.test(raw)) {
+    return "GitHub ha limitado las peticiones anónimas. Espera unos minutos o añade un token en Ajustes: el límite sube de 60 a 5000 peticiones por hora.";
+  }
+  return raw;
+}
+
 function backendOrder(backend: string): number {
   switch (backend) {
     case "vulkan":
@@ -867,26 +846,28 @@ function AssetRow({
 }) {
   return (
     <li className="flex items-center gap-3 px-4 py-2.5">
-      <span
+      <Cpu
+        size={14}
         className={clsx(
-          "flex h-7 w-7 shrink-0 items-center justify-center rounded-card",
-          recommended ? "bg-accent-600/15 text-accent-400" : "bg-base-800 text-ink-400",
+          "shrink-0",
+          recommended ? "text-accent-400" : "text-ink-500",
         )}
-      >
-        <Cpu size={14} />
-      </span>
+        aria-hidden
+      />
       <div className="min-w-0 flex-1">
         <div className="flex flex-wrap items-center gap-1.5">
           <span className="text-label font-medium text-ink-100">
             {backendLabel(asset.backend)}
           </span>
-          <span className="meta-mark">{asset.arch}</span>
+          <span className="text-meta text-ink-500">{asset.arch}</span>
           {asset.cudaVersion && (
-            <span className="meta-mark">CUDA {asset.cudaVersion}</span>
+            <span className="text-meta text-ink-500">
+              CUDA {asset.cudaVersion}
+            </span>
           )}
           {asset.sha256 && (
             <span
-              className="meta-mark meta-mark-ok"
+              className="inline-flex items-center gap-1 text-meta text-ok-400"
               title={`SHA-256: ${asset.sha256}`}
             >
               <CheckCircle2 size={10} />

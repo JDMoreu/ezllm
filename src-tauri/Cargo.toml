@@ -1,6 +1,6 @@
 [package]
 name = "ezllm"
-version = "0.1.0"
+version = "0.1.1"
 description = "EzLLM — cliente profesional de llama.cpp"
 authors = ["JDMoreu"]
 license = "MIT"

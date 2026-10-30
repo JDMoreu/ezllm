@@ -176,6 +176,8 @@ export interface MemoryEstimate {
   ctxPerSlot: number;
   nDenseLayers: number;
   nSwaLayers: number;
+  nLayers: number;
+  ctxTrain: number;
   bytesPerElement: number;
 }
 
@@ -288,6 +290,8 @@ export interface Telemetry {
   cpu: { percent: number };
   ram: { totalBytes: number; availableBytes: number; usedBytes: number };
   gpus: GpuDevice[];
+  /** Uso del motor gráfico más ocupado (contadores «GPU Engine»). */
+  gpu: { percent: number } | null;
   process: { pid: number; workingSetBytes: number; cpuSeconds: number } | null;
   timestampMs: number;
 }
@@ -318,6 +322,8 @@ export interface ArgOption {
   defaultValue: string | null;
   section: string;
   description: string;
+  /** Valores admitidos que publica `llama-server --help`. */
+  choices?: string[];
 }
 
 export interface ArgHelp {

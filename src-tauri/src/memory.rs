@@ -98,6 +98,7 @@ pub struct ModelDims {
     pub vocab_size: u64,
     pub embedding_length: u64,
     pub n_params_est: u64,
+    pub ctx_train: u64,
 }
 
 impl ModelDims {
@@ -117,6 +118,7 @@ impl ModelDims {
             vocab_size: info.vocab_size,
             embedding_length: info.embedding_length,
             n_params_est: info.n_params_est,
+            ctx_train: info.context_length,
         }
     }
 }
@@ -303,8 +305,12 @@ pub fn weights_split(model: &ModelDims, n_gpu_layers: Option<i64>) -> WeightsSpl
         // lo que se queda en CPU es el tensor lazy + lo que no se sube
         let frac = match n_gpu_layers {
             None => 1.0,
+            // -ngl 0 es CPU: ningún peso en la GPU.
+            Some(0) => 0.0,
+            // -1 (auto) y -2 (all) suben todas las capas; no son fracciones.
+            Some(n) if n < 0 => 1.0,
             Some(_) if n_layer == 0 => 1.0,
-            Some(n) => (n as f64 / n_layer as f64).min(1.0),
+            Some(n) => (n as f64 / n_layer as f64).clamp(0.0, 1.0),
         };
         let rest = total - lazy_mib / 1024.0;
         let cpu = rest * (1.0 - frac) + lazy_mib / 1024.0;
@@ -335,16 +341,26 @@ pub fn weights_split(model: &ModelDims, n_gpu_layers: Option<i64>) -> WeightsSpl
             embd_share,
             note: "sin reparto: se asume todo en GPU".to_string(),
         },
-        Some(_) if n_layer == 0 => WeightsSplit {
+        // -ngl 0 es CPU: todos los pesos en RAM.
+        Some(0) => WeightsSplit {
+            total_gb: round2(total),
+            gpu_gb: 0.0,
+            cpu_gb: round2(total),
+            lazy_mib: 0.0,
+            embd_share,
+            note: "CPU: todos los pesos en RAM".to_string(),
+        },
+        // -1 (auto) y -2 (all) se miden como cota superior: todo en GPU.
+        Some(n) if n < 0 || n_layer == 0 => WeightsSplit {
             total_gb: round2(total),
             gpu_gb: round2(total),
             cpu_gb: 0.0,
             lazy_mib: 0.0,
             embd_share,
-            note: "sin reparto: se asume todo en GPU".to_string(),
+            note: "auto o todas las capas: se asume todo en GPU".to_string(),
         },
         Some(n) => {
-            let frac = (n as f64 / n_layer as f64).min(1.0);
+            let frac = (n as f64 / n_layer as f64).clamp(0.0, 1.0);
             let cpu = total.min(total * (1.0 - frac) + total * embd_share * frac);
             WeightsSplit {
                 total_gb: round2(total),
@@ -379,6 +395,9 @@ pub struct MemoryEstimate {
     pub n_dense_layers: usize,
     pub n_swa_layers: usize,
     pub bytes_per_element: f64,
+    pub n_layers: u64,
+    /// Contexto con el que se entrenó el modelo: el que llama.cpp usa sin `-c`.
+    pub ctx_train: u64,
 }
 
 /// Desglose completo de memoria.
@@ -400,6 +419,8 @@ pub fn estimate(
     let cb = compute_buffer_bytes(ctx, ubatch);
     let weights = model_weights_gb(model);
     let split = weights_split(model, n_gpu_layers);
+    // Con -ngl 0 todo corre en CPU: la GPU no reserva pesos, KV ni compute.
+    let cpu_only = n_gpu_layers == Some(0);
 
     MemoryEstimate {
         weights_gb: round2(weights),
@@ -410,15 +431,21 @@ pub fn estimate(
         kv_swa_gb: round3(kv.swa_bytes / 1024.0 / 1024.0 / 1024.0),
         kv_cache_mib: round1(kv.total_mib),
         compute_buffer_gb: round3(cb.total_gb),
-        compute_gpu_mib: cb.gpu_mib,
+        compute_gpu_mib: if cpu_only { 0.0 } else { cb.gpu_mib },
         compute_host_mib: cb.host_mib,
-        vram_requested_gb: round2(split.gpu_gb + kv.total_gb + cb.total_gb / 2.0),
+        vram_requested_gb: if cpu_only {
+            0.0
+        } else {
+            round2(split.gpu_gb + kv.total_gb + cb.total_gb / 2.0)
+        },
         total_gb: round2(weights + kv.total_gb + cb.total_gb),
         ctx_padded: kv.ctx_padded,
         ctx_per_slot: kv.ctx_per_slot,
         n_dense_layers: kv.n_dense_layers,
         n_swa_layers: kv.n_swa_layers,
         bytes_per_element: kv.bytes_per_element,
+        n_layers: model.n_layers,
+        ctx_train: model.ctx_train,
     }
 }
 
@@ -461,6 +488,7 @@ mod tests {
             vocab_size: 262144,
             embedding_length: 2048,
             n_params_est: 4_000_000_000,
+            ctx_train: 131072,
         }
     }
 
@@ -503,5 +531,29 @@ mod tests {
             .collect();
         // La densa reparte el contexto entre ranuras: no cambia.
         assert!((dense[0] - dense[3]).abs() < 1.0);
+    }
+
+    #[test]
+    fn negative_gpu_layers_means_all_on_gpu() {
+        let m = gemma4_dims();
+        let auto = weights_split(&m, Some(-1));
+        let all = weights_split(&m, Some(-2));
+        let unspecified = weights_split(&m, None);
+        // `-1` (auto) y `-2` (all) no son fracciones negativas: suben todas
+        // las capas. Antes producían una GPU negativa en la estimación.
+        assert_eq!(auto.gpu_gb, unspecified.gpu_gb);
+        assert_eq!(all.gpu_gb, unspecified.gpu_gb);
+    }
+
+    #[test]
+    fn cpu_request_asks_no_vram() {
+        let m = gemma4_dims();
+        // -ngl 0: pesos, KV y compute viven en RAM; la GPU no reserva nada.
+        let cpu = estimate(&m, 8192, 1, "f16", "f16", 512, Some(0));
+        assert_eq!(cpu.weights_gpu_gb, 0.0);
+        assert_eq!(cpu.compute_gpu_mib, 0.0);
+        assert_eq!(cpu.vram_requested_gb, 0.0);
+        assert_eq!(cpu.n_layers, 42);
+        assert_eq!(cpu.ctx_train, 131072);
     }
 }

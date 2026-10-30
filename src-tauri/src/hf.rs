@@ -7,6 +7,7 @@
 
 use std::collections::BTreeMap;
 use std::path::{Component, Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::LazyLock;
 use std::time::Instant;
 
@@ -16,6 +17,23 @@ use serde::{Deserialize, Serialize};
 use tokio::io::AsyncWriteExt;
 
 pub const API: &str = "https://huggingface.co/api/models";
+
+/// Una descarga a la vez: la UI encola, el backend solo necesita saber si la
+/// descarga en curso debe detenerse y borrar el fichero parcial.
+static CANCEL: AtomicBool = AtomicBool::new(false);
+
+/// Pide a la descarga en curso que se detenga en el próximo fragmento.
+pub fn cancel_download() {
+    CANCEL.store(true, Ordering::SeqCst);
+}
+
+fn reset_cancel() {
+    CANCEL.store(false, Ordering::SeqCst);
+}
+
+fn cancelled() -> bool {
+    CANCEL.load(Ordering::SeqCst)
+}
 
 static SPLIT_RE: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r"(?i)^(.*)-(\d{5})-of-(\d{5})\.gguf$").expect("regex de shards")
@@ -265,6 +283,7 @@ pub async fn download(
     if paths.is_empty() {
         return Err("No se ha seleccionado ningún archivo".to_string());
     }
+    reset_cancel();
 
     let detail = detail(client, repo).await?;
     let mut selected = Vec::new();
@@ -291,6 +310,9 @@ pub async fn download(
     let started = Instant::now();
 
     for (index, file) in selected.iter().enumerate() {
+        if cancelled() {
+            return Err("Descarga cancelada por el usuario.".to_string());
+        }
         let relative = safe_relative(&file.path)
             .ok_or_else(|| format!("Ruta de archivo no válida: {}", file.path))?;
         let dest = destination.join(&relative);
@@ -366,6 +388,11 @@ pub async fn download(
         let mut last_report = Instant::now();
 
         while let Some(chunk) = stream.next().await {
+            if cancelled() {
+                drop(out);
+                let _ = tokio::fs::remove_file(&tmp).await;
+                return Err("Descarga cancelada por el usuario.".to_string());
+            }
             let chunk = chunk.map_err(|e| format!("Se cortó la descarga de {}: {e}", file.path))?;
             out.write_all(&chunk)
                 .await

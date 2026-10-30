@@ -451,6 +451,12 @@ async fn hf_model(state: State<'_, AppState>, repo: String) -> CmdResult<hf::HfM
     hf::detail(&state.client, &repo).await
 }
 
+/// Pide a la descarga de Hugging Face en curso que se detenga.
+#[tauri::command]
+fn hf_cancel_download() {
+    hf::cancel_download();
+}
+
 /// Descarga una o varias partes de una cuantización a la carpeta de modelos.
 ///
 /// El progreso se emite por `hf-download-progress`.
@@ -526,6 +532,12 @@ async fn start_server(
     mmproj: Option<String>,
     draft_model: Option<String>,
 ) -> CmdResult<ServerStatus> {
+    // Un servidor sin modelo arranca en modo router y responde /health, pero
+    // no puede atender el chat. La UI lo presenta como «Iniciar modelo», así
+    // que el comando exige el modelo en vez de aceptar ese estado vacío.
+    if model_path.as_deref().map(str::trim).unwrap_or("").is_empty() {
+        return Err("Elige un modelo GGUF antes de iniciar el servidor.".to_string());
+    }
     let cfg = state.config.lock().await.clone();
     let exe = current_llama_server(&cfg).ok_or_else(|| {
         format!(
@@ -909,6 +921,7 @@ pub fn run() {
             hf_popular,
             hf_model,
             hf_download,
+            hf_cancel_download,
             estimate_memory,
             hardware_report,
             start_server,

@@ -52,7 +52,7 @@ const OVERRIDES: Record<string, Override> = {
   "ctx-size": {
     title: "Contexto",
     description:
-      "Tokens de contexto que puede recordar el modelo. Más contexto gasta más KV cache y VRAM.",
+      "Tokens de contexto que puede recordar el modelo. 0 usa el contexto del modelo; más contexto gasta más KV cache y VRAM.",
     category: "Contexto y KV",
   },
   predict: {
@@ -60,10 +60,33 @@ const OVERRIDES: Record<string, Override> = {
     description: "Máximo de tokens que produce cada respuesta. -1 significa sin límite.",
     category: "Muestreo",
   },
+  temp: {
+    title: "Temperatura",
+    description:
+      "Aleatoriedad de la respuesta. Más alta, más variada; más baja, más repetitiva. 0.80 por defecto en llama.cpp.",
+    category: "Muestreo",
+  },
+  "top-k": {
+    title: "Top K",
+    description: "Candidatos que se consideran en cada token. 40 por defecto en llama.cpp.",
+    category: "Muestreo",
+  },
+  "top-p": {
+    title: "Top P",
+    description:
+      "Recorta los candidatos por probabilidad acumulada. 0.95 por defecto en llama.cpp.",
+    category: "Muestreo",
+  },
+  "min-p": {
+    title: "Min P",
+    description:
+      "Descarta candidatos muy improbables frente al más probable. 0.05 por defecto en llama.cpp.",
+    category: "Muestreo",
+  },
   "gpu-layers": {
     title: "Capas en GPU",
     description:
-      "Número de capas del modelo que se cargan en VRAM. 99 intenta mover todo el modelo a la GPU.",
+      "Capas del modelo que se cargan en VRAM. auto elige por ti; all fuerza todas las capas.",
     category: "GPU y offload",
   },
   "flash-attn": {
@@ -87,7 +110,7 @@ const OVERRIDES: Record<string, Override> = {
   parallel: {
     title: "Slots en paralelo",
     description:
-      "Peticiones que el servidor puede atender a la vez. Cada slot reserva su propia KV cache.",
+      "Peticiones que el servidor puede atender a la vez. Cada slot reserva su propia KV cache. -1 deja que llama.cpp decida.",
     category: "Rendimiento",
   },
   "batch-size": {
@@ -250,8 +273,6 @@ const OVERRIDES: Record<string, Override> = {
 };
 
 export const SUGGESTED_KEYS = [
-  "gpu-layers",
-  "ctx-size",
   "flash-attn",
   "cache-type-k",
   "cache-type-v",
@@ -260,11 +281,19 @@ export const SUGGESTED_KEYS = [
   "threads",
   "cont-batching",
   "jinja",
-  "host",
-  "port",
-  "no-mmap",
   "alias",
 ];
+
+/**
+ * Flags que solo imprimen algo y salen: no configuran el servidor, así que no
+ * tienen sentido como argumentos de la app. Los guiones de completado se
+ * filtran por prefijo porque cambian de shell en shell.
+ */
+const INFORMATIONAL_KEYS = new Set(["help", "usage", "version", "cache-list", "list-devices"]);
+
+export function isInformational(option: ArgOption): boolean {
+  return INFORMATIONAL_KEYS.has(option.key) || option.key.startsWith("completion-");
+}
 
 export function metadataFor(option: ArgOption): Override {
   if (getLanguage() === "en") {
