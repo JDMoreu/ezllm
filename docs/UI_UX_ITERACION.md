@@ -142,6 +142,10 @@ local y etiquetas de cuantización.
 - **Ajustes como sección**: el botón del pie del lateral desaparece. Ajustes es
   ahora un espacio propio con las mismas piezas del diálogo (Carpetas, Idioma,
   token de GitHub) y el tamaño de primera lectura de una vista, no de un modal.
+- **Un solo sitio para el servidor**: el estado («Servidor detenido» o la IP y el
+  puerto) deja la barra de título y queda solo en el pozo del lateral, junto a
+  **Abrir chat**. El botón de chat sale del panel de Ejecutar para no repetir la
+  misma acción en dos sitios.
 - **Grupo del header**: el nombre, **Guardar** y el menú quedan dentro de un
   solo control con borde, radio y separadores de 1px, centrado verticalmente en
   la barra. El **nombre** abre la lista de configuraciones (acento al pasar,

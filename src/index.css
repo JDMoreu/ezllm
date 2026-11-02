@@ -1211,20 +1211,6 @@ body {
       max-width: 9rem;
     }
   }
-  .workspace-status {
-    display: flex;
-    min-width: 0;
-    align-items: center;
-    gap: 0.45rem;
-    color: var(--color-ink-400);
-    font-size: var(--text-label);
-  }
-  .workspace-status .mono {
-    overflow: hidden;
-    max-width: 16rem;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
 
   /* --- Navegador de modelos ------------------------------------------- */
   .model-tabs {
@@ -2088,9 +2074,6 @@ body {
   .app-sidebar-label,
   .app-sidebar-section,
   .app-sidebar-machine {
-    display: none;
-  }
-  .workspace-status {
     display: none;
   }
 }

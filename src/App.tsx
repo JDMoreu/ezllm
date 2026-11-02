@@ -578,24 +578,6 @@ function Shell() {
 
         <div className="app-titlebar-grow" data-tauri-drag-region />
 
-        <div className="workspace-status" data-tauri-drag-region>
-          <span
-            className={clsx(
-              "pulse-dot",
-              server?.running
-                ? server.health
-                  ? "pulse-dot-ok"
-                  : "pulse-dot-warn"
-                : "pulse-dot-idle",
-            )}
-            aria-hidden
-            data-tauri-drag-region
-          />
-          <span className="mono truncate" data-tauri-drag-region>
-            {server?.running ? `${server.host}:${server.port}` : t("Servidor detenido")}
-          </span>
-        </div>
-
         <WindowControls />
       </header>
 
@@ -913,8 +895,6 @@ function Shell() {
                       onStart={handleStart}
                       onStop={handleStop}
                       onRestart={handleRestart}
-                      onOpenChat={() => void openChat()}
-                      chatAvailable={!!(server?.running && server.health && serverBaseUrl)}
                       onNavigate={showTab}
                       hasRuntime={hasRuntime}
                       hasModel={hasModel}

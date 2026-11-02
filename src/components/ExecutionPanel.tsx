@@ -5,7 +5,6 @@ import {
   Check,
   Copy,
   Cpu,
-  ExternalLink,
   FolderOpen,
   MemoryStick,
   Play,
@@ -59,8 +58,6 @@ export default function ExecutionPanel({
   onStart,
   onStop,
   onRestart,
-  onOpenChat,
-  chatAvailable,
   onNavigate,
   hasRuntime,
   hasModel,
@@ -80,8 +77,6 @@ export default function ExecutionPanel({
   onStart: () => void;
   onStop: () => void;
   onRestart: () => void;
-  onOpenChat: () => void;
-  chatAvailable: boolean;
   onNavigate: (tab: "run" | "models" | "runtime") => void;
   hasRuntime: boolean;
   hasModel: boolean;
@@ -276,16 +271,6 @@ export default function ExecutionPanel({
           </span>
         )}
         <div className="ml-auto flex flex-wrap items-center gap-2">
-          {server?.running && chatAvailable && (
-            <Button
-              size="sm"
-              variant="primary"
-              icon={<ExternalLink size={11} />}
-              onClick={onOpenChat}
-            >
-              {t("Abrir chat")}
-            </Button>
-          )}
           {server?.running && (
             <Button
               size="sm"

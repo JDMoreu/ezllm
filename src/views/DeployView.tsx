@@ -33,8 +33,6 @@ export default function DeployView({
   onStart,
   onStop,
   onRestart,
-  onOpenChat,
-  chatAvailable,
   onNavigate,
   hasRuntime,
   hasModel,
@@ -53,8 +51,6 @@ export default function DeployView({
   onStart: () => void;
   onStop: () => void;
   onRestart: () => void;
-  onOpenChat: () => void;
-  chatAvailable: boolean;
   onNavigate: (tab: Workspace) => void;
   hasRuntime: boolean;
   hasModel: boolean;
@@ -247,8 +243,6 @@ export default function DeployView({
         onStart={onStart}
         onStop={onStop}
         onRestart={onRestart}
-        onOpenChat={onOpenChat}
-        chatAvailable={chatAvailable}
         onNavigate={onNavigate}
         hasRuntime={hasRuntime}
         hasModel={hasModel}

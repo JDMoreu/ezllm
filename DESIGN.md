@@ -120,7 +120,7 @@ components:
 
 **Creative North Star: "The Instrument Bench"**
 
-EzLLM looks like a bench that is already in use, not a dashboard that wants to be admired. The interface is dark, precise, and unhurried: a fixed sidebar holds the machine and the server status, while the workspace changes between three complete tasks. Controls are compact, rows are flat, and the measured values are the only elements allowed to look technical.
+EzLLM looks like a bench that is already in use, not a dashboard that wants to be admired. The interface is dark, precise, and unhurried: a fixed sidebar holds the workspace navigation, the machine and the server status, while the main area changes between four complete workspaces. Controls are compact, rows are flat, and the measured values are the only elements allowed to look technical.
 
 The system gets its depth from four graphite surfaces and one-pixel rules, not from stacked floating cards. Indigo is the only action color. Green, amber, red, cyan, and violet carry meaning and are never used as decoration. The result should feel like professional local software: dense enough for someone who knows llama.cpp, legible enough for someone opening their first GGUF.
 
@@ -196,7 +196,7 @@ The palette is graphite with a single cool indigo voltage and a small set of wea
 
 ## Layout
 
-The app is a two-column shell under a 48px in-app title bar. The title bar owns the brand, the three workspace tabs, the server endpoint, and window controls; it replaces both the native Windows chrome and the old separate workspace bar. The sidebar is fixed at 264px and contains the runtime summary, the measured machine, folder shortcuts (models, llama.cpp, and config.json), and the server status. Model selection, the command preview, and presets live in the main workspace. The workspace is the only scrolling region, followed by a content column with a 1088px maximum and 24px horizontal padding. New installations default to `Documents/EzLLM/models` for GGUFs and `Documents/EzLLM/llama.cpp` for installed builds; `config.json` and logs live under `AppData/Roaming/EzLLM`. Existing configured paths are preserved.
+The app is a two-column shell under a 48px in-app title bar. The title bar owns the brand, the active configuration group, and the window controls; it replaces the native Windows chrome. The workspace navigation, the server endpoint and its status live only in the sidebar — there is no second status readout in the title bar and no chat button inside the execution panel. The sidebar is fixed at 264px and contains the navigation, the runtime summary, the measured machine, and the server status well. Model selection, the command preview and the presets live in the main workspace. The workspace is the only scrolling region, followed by a content column with a 1088px maximum and 24px horizontal padding. New installations default to `Documents/EzLLM/models` for GGUFs and `Documents/EzLLM/llama.cpp` for installed builds; `config.json` and logs live under `AppData/Roaming/EzLLM`. Existing configured paths are preserved.
 
 The vertical rhythm is 4px, with 20px between major blocks and 8–12px inside a row. Sections use 16px of padding. The layout is designed to be legible at the 960 × 640 minimum: tabs and the server state stay on one line, the execution model row stacks into three lines, the model master-detail becomes a single column, and the category chips wrap instead of forcing a horizontal scroll.
 
