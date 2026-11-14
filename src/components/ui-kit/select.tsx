@@ -47,7 +47,7 @@ function SelectTrigger({
         // Personalizado a EzLLM: densidad de escritorio, superficie elevada
         // (base-850) y borde visible. Los roles genéricos de shadcn
         // (bg-popover, border-input) se sustituyen por los tokens de la app.
-        "flex w-fit items-center justify-between gap-1.5 rounded-control border border-base-700 bg-base-850 py-1.5 pr-2 pl-2.5 text-label text-ink-200 whitespace-nowrap transition-colors outline-none select-none hover:bg-base-800 focus-visible:border-accent-400 disabled:cursor-not-allowed disabled:opacity-50 data-[placeholder]:text-ink-500 data-[state=open]:rounded-b-none data-[state=open]:border-b-transparent data-[state=open]:bg-base-900 data-[state=open]:hover:bg-base-900 data-[size=default]:h-9 data-[size=sm]:h-7 *:data-[slot=select-value]:line-clamp-1 *:data-[slot=select-value]:flex *:data-[slot=select-value]:items-center *:data-[slot=select-value]:gap-1.5 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg]:text-ink-400 [&_svg:not([class*='size-'])]:size-4",
+        "flex w-fit items-center justify-between gap-1.5 rounded-control border border-base-600 bg-base-850 py-1.5 pr-2 pl-2.5 text-label text-ink-200 whitespace-nowrap transition-colors outline-none select-none hover:bg-base-800 focus-visible:border-accent-400 focus-visible:ring-2 focus-visible:ring-ring/40 disabled:cursor-not-allowed disabled:opacity-50 data-[placeholder]:text-ink-500 data-[state=open]:rounded-b-none data-[state=open]:border-b-transparent data-[state=open]:bg-base-900 data-[state=open]:hover:bg-base-900 data-[size=default]:h-9 data-[size=sm]:h-8 *:data-[slot=select-value]:line-clamp-1 *:data-[slot=select-value]:flex *:data-[slot=select-value]:items-center *:data-[slot=select-value]:gap-1.5 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg]:text-ink-400 [&_svg:not([class*='size-'])]:size-4",
         className
       )}
       {...props}
@@ -72,7 +72,10 @@ function SelectContent({
       <SelectPrimitive.Content
         data-slot="select-content"
         data-align-trigger={position === "item-aligned"}
-        className={cn("relative z-50 max-h-[min(18rem,var(--radix-select-content-available-height))] min-w-36 overflow-x-hidden overflow-y-auto rounded-panel border border-base-700 bg-base-900 p-1 text-ink-200 shadow-float data-[side=bottom]:rounded-t-none data-[side=bottom]:border-t-0 data-[side=top]:rounded-b-none data-[side=top]:border-b-0", position ==="popper"&&"", className )}
+        className={cn("relative z-50 max-h-[min(18rem,var(--radix-select-content-available-height))] min-w-36 overflow-x-hidden overflow-y-auto rounded-panel border border-base-600 bg-base-900 p-1 text-ink-200 shadow-float data-[side=bottom]:rounded-t-none data-[side=bottom]:border-t-0 data-[side=top]:rounded-b-none data-[side=top]:border-b-0", // En modo popper el panel mide EXACTAMENTE lo que su disparador: es
+          // su continuación visual. Antes la viewport tomaba ese ancho y el
+          // panel le sumaba relleno y borde, así que sobresalía ~10px.
+          position === "popper" && "w-(--radix-select-trigger-width) min-w-0", className )}
         position={position}
         align={align}
         {...props}
@@ -81,7 +84,7 @@ function SelectContent({
         <SelectPrimitive.Viewport
           data-position={position}
           className={cn(
-            "data-[position=popper]:h-(--radix-select-trigger-height) data-[position=popper]:w-full data-[position=popper]:min-w-(--radix-select-trigger-width)",
+            "data-[position=popper]:h-(--radix-select-trigger-height) data-[position=popper]:w-full",
             position === "popper" && ""
           )}
         >

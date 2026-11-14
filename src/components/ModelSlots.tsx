@@ -1,4 +1,4 @@
-import { FolderOpen, X } from "lucide-react";
+import { Box, Images, Layers3, FolderOpen, X } from "lucide-react";
 
 import { basename } from "../lib/format";
 import { t } from "../lib/i18n";
@@ -40,11 +40,12 @@ export default function ModelSlots({
   return (
     <div className="execution-models">
       {ROLES.map((role) => {
+        const Icon = role === "primary" ? Box : role === "mmproj" ? Images : Layers3;
         const path = paths[role];
         const name = path ? basename(path) : empty[role];
         return (
           <div className="execution-model" key={role}>
-            <span className="execution-model-label">{labels[role]}</span>
+            <span className="execution-model-label"><Icon size={14} aria-hidden />{labels[role]}</span>
             <button
               type="button"
               className="execution-model-value"

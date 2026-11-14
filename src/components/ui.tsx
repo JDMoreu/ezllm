@@ -1,5 +1,7 @@
-/** Componentes base de EzLlamaCpp. Todos sin dependencias externas. */
+/** Composiciones de EzLLM sobre las primitivas compartidas de shadcn/ui. */
 import {
+  cloneElement,
+  isValidElement,
   createContext,
   useCallback,
   useContext,
@@ -12,6 +14,7 @@ import {
 } from "react";
 import { AlertTriangle, Check, Info, Loader2, X } from "lucide-react";
 import clsx from "clsx";
+import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import {
   AlertDialog,
@@ -21,6 +24,10 @@ import {
   AlertDialogTitle,
 } from "@/components/ui-kit/alert-dialog";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui-kit/dialog";
+import { Button as KitButton } from "./ui-kit/button";
+import { Input } from "./ui-kit/input";
+import { Field as KitField, FieldLabel, FieldDescription } from "./ui-kit/field";
+import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from "./ui-kit/select";
 import { Toaster } from "@/components/ui-kit/sonner";
 
 // ---------------------------------------------------------------------------
@@ -45,25 +52,18 @@ export function Button({
   ...rest
 }: ButtonProps) {
   return (
-    <button
-      className={clsx(
-        "btn",
-        variant === "primary" && "btn-primary",
-        variant === "ghost" && "btn-ghost",
-        variant === "danger" && "btn-danger",
-        variant === "quiet" && "btn-quiet",
-        // La version pequena mantiene la altura del base y solo reduce el
-        // padding horizontal y el cuerpo: dos botones hermanos deben
-        // alinearse.
-        size === "sm" && "px-2.5 py-[0.4rem] text-label",
-        className,
-      )}
+    <KitButton
+      type="button"
+      variant={variant === "primary" ? "default" : variant === "danger" ? "destructive" : variant === "quiet" ? "ghost" : "outline"}
+      size={size === "sm" ? "sm" : "default"}
+      className={className}
       disabled={disabled || loading}
+      aria-busy={loading || undefined}
       {...rest}
     >
-      {loading ? <Loader2 size={14} className="animate-spin" /> : icon}
+      {loading ? <Loader2 data-icon="inline-start" className="animate-spin" aria-hidden /> : isValidElement(icon) ? cloneElement(icon as React.ReactElement<Record<string, unknown>>, { "data-icon": "inline-start", "aria-hidden": true }) : icon}
       {children}
-    </button>
+    </KitButton>
   );
 }
 
@@ -97,13 +97,13 @@ export function Card({
               </h2>
             )}
             {subtitle && (
-              <p className="mt-0.5 text-body leading-relaxed text-ink-400">{subtitle}</p>
+              <p className="mt-0.5 text-label text-ink-400">{subtitle}</p>
             )}
           </div>
           {actions && <div className="flex shrink-0 items-center gap-2">{actions}</div>}
         </header>
       )}
-      <div className={clsx("p-4", bodyClassName)}>{children}</div>
+      <div className={cn("p-4", bodyClassName)}>{children}</div>
     </section>
   );
 }
@@ -126,13 +126,13 @@ export function Field({
   className?: string;
 }) {
   return (
-    <div className={className}>
-      <label className="label" htmlFor={htmlFor}>
+    <KitField className={className}>
+      <FieldLabel htmlFor={htmlFor}>
         {label}
-      </label>
+      </FieldLabel>
       {children}
-      {hint && <p className="mt-1.5 text-label leading-relaxed text-ink-500">{hint}</p>}
-    </div>
+      {hint && <FieldDescription>{hint}</FieldDescription>}
+    </KitField>
   );
 }
 
@@ -157,12 +157,14 @@ export function NumberField({
   suffix?: string;
   disabled?: boolean;
 }) {
+  const id = useId();
   return (
-    <Field label={label} hint={hint}>
+    <Field label={label} hint={hint} htmlFor={id}>
       <div className="relative">
-        <input
+        <Input
+          id={id}
           type="number"
-          className="field mono tabular-nums"
+          className="mono tabular-nums"
           value={value}
           min={min}
           max={max}
@@ -198,20 +200,17 @@ export function SelectField({
   hint?: ReactNode;
   disabled?: boolean;
 }) {
+  const id = useId();
+  // Radix reserves the empty value for clearing; keep the public API unchanged.
+  const empty = "__ezllm_empty_option__";
   return (
-    <Field label={label} hint={hint}>
-      <select
-        className="field"
-        value={value}
-        disabled={disabled}
-        onChange={(e) => onChange(e.target.value)}
-      >
-        {options.map((o) => (
-          <option key={o.value} value={o.value}>
-            {o.label}
-          </option>
-        ))}
-      </select>
+    <Field label={label} hint={hint} htmlFor={id}>
+      <Select value={value || empty} onValueChange={(next) => onChange(next === empty ? "" : next)} disabled={disabled}>
+        <SelectTrigger id={id} className="w-full"><SelectValue /></SelectTrigger>
+        <SelectContent position="popper" align="start" sideOffset={0}><SelectGroup>
+          {options.map((option) => <SelectItem key={option.value} value={option.value || empty}>{option.label}</SelectItem>)}
+        </SelectGroup></SelectContent>
+      </Select>
     </Field>
   );
 }
@@ -550,13 +549,13 @@ export function Section({
               </h2>
             )}
             {description && (
-              <p className="mt-1 text-body leading-relaxed text-ink-400">{description}</p>
+              <p className="mt-0.5 text-label text-ink-400">{description}</p>
             )}
           </div>
           {actions && <div className="flex shrink-0 items-center gap-2">{actions}</div>}
         </header>
       )}
-      <div className={clsx("p-4", bodyClassName)}>{children}</div>
+      <div className={cn("p-4", bodyClassName)}>{children}</div>
     </section>
   );
 }

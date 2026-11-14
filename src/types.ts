@@ -286,24 +286,23 @@ export interface StableRelease {
 
 
 /** Instantánea medida de la telemetría del equipo. */
+export interface GpuMemory {
+  id: string;
+  name: string;
+  dedicatedTotalBytes: number;
+  dedicatedUsedBytes: number | null;
+  source: string;
+}
+
 export interface Telemetry {
   cpu: { percent: number };
   ram: { totalBytes: number; availableBytes: number; usedBytes: number };
   gpus: GpuDevice[];
+  gpuMemory: GpuMemory[];
   /** Uso del motor gráfico más ocupado (contadores «GPU Engine»). */
   gpu: { percent: number } | null;
   process: { pid: number; workingSetBytes: number; cpuSeconds: number } | null;
   timestampMs: number;
-}
-
-/** Velocidad real medida contra el servidor en marcha. */
-export interface SpeedResult {
-  promptPerSecond: number;
-  predictedPerSecond: number;
-  firstTokenMs: number;
-  promptTokens: number;
-  predictedTokens: number;
-  totalMs: number;
 }
 
 /** Slots del servidor: cuántos están ocupados ahora mismo. */
@@ -311,6 +310,13 @@ export interface SlotsState {
   total: number;
   busy: number;
   nCtx: number;
+}
+
+/** Espacio de la unidad que contiene la carpeta de modelos. */
+export interface DiskSpace {
+  root: string;
+  totalBytes: number;
+  freeBytes: number;
 }
 
 /** Una opción del catálogo real de `llama-server --help`. */

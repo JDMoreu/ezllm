@@ -16,6 +16,7 @@ import {
 } from "lucide-react";
 
 import { api, onInstallProgress } from "../lib/api";
+import Hint from "../components/Hint";
 import {
   Alert,
   Button,
@@ -272,6 +273,19 @@ export default function ReleasesView({
               <SelectItem value="nightly">{t("Nightly")}</SelectItem>
             </SelectContent>
           </Select>
+          <Hint
+            label={t(
+              "Las etiquetas vX.Y.Z no publican binarios: apuntan con nightly-tag.txt a la build real. EzLLM resuelve ese puntero automáticamente.",
+            )}
+          >
+            <button
+              type="button"
+              className="sidebar-help"
+              aria-label={t("Acerca de los canales")}
+            >
+              <Info aria-hidden />
+            </button>
+          </Hint>
           {onPickLlamaFolder && (
             <Button
               icon={<FolderOpen size={13} />}
@@ -468,15 +482,6 @@ export default function ReleasesView({
       {/* --- Releases estables --- */}
       {channel === "stable" && (
         <div className="space-y-2">
-          <p className="flex items-start gap-2 px-1 py-1 text-label leading-relaxed text-ink-500">
-            <Info size={13} className="mt-0.5 shrink-0" />
-            <span>
-              Las etiquetas <span className="mono">vX.Y.Z</span> no publican binarios:
-              apuntan con <span className="mono">nightly-tag.txt</span> a la build
-              real. Aquí se resuelve ese puntero automáticamente.
-            </span>
-          </p>
-
           {stable.length === 0 && !loadingStable && (
             <Alert tone="warn" title={t("No se pudieron cargar las versiones estables")}>
               {t("GitHub puede limitar las peticiones anónimas. Las builds nightly siguen disponibles mientras tanto.")}

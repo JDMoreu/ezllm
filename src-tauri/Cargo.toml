@@ -1,6 +1,6 @@
 [package]
 name = "ezllm"
-version = "0.1.1"
+version = "0.1.2"
 description = "EzLLM — cliente profesional de llama.cpp"
 authors = ["JDMoreu"]
 license = "MIT"
@@ -40,6 +40,7 @@ log = "0.4"
 env_logger = "0.11"
 
 [target.'cfg(windows)'.dependencies]
+windows = { version = "0.62.2", features = ["Win32_Graphics_Dxgi"] }
 windows-sys = { version = "0.60", features = [
     "Win32_Foundation",
     "Win32_System_Memory",
@@ -49,6 +50,8 @@ windows-sys = { version = "0.60", features = [
     "Win32_System_Performance",
     "Win32_System_ProcessStatus",
     "Win32_Storage_FileSystem",
+    "Win32_System_LibraryLoader",
+    "Win32_UI_WindowsAndMessaging",
 ] }
 
 

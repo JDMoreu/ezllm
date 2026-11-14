@@ -1,6 +1,6 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState, type ReactNode } from "react";
 import clsx from "clsx";
-import { Check, ChevronDown, FilePlus, Save, Trash2, Upload, X } from "lucide-react";
+import { Check, ChevronDown, ChevronsUpDown, FilePlus, Save, Trash2, Upload, X } from "lucide-react";
 import { open } from "@tauri-apps/plugin-dialog";
 
 import { api } from "../lib/api";
@@ -25,9 +25,9 @@ import type { AppConfig, Deployment } from "../types";
 type PromptMode = "save-as" | "import" | null;
 
 /**
- * Configuración activa en la barra superior: nombre, cambiar, guardar y sus
- * diálogos. Vive en el header porque aplica a toda la app, no solo al panel
- * de ejecución.
+ * Cabecera de la tarjeta de ejecución: el nombre de la configuración hace de
+ * título (abre la lista) y Guardar va a la derecha, como las acciones de
+ * cualquier otra cabecera de sección.
  */
 export default function ConfigBar({
   config,
@@ -36,6 +36,7 @@ export default function ConfigBar({
   selectedDraft,
   onSelect,
   onConfigChange,
+  actions,
 }: {
   config: AppConfig;
   selectedModel: string | null;
@@ -43,6 +44,8 @@ export default function ConfigBar({
   selectedDraft: string | null;
   onSelect: (model: string | null, mmproj: string | null, draft: string | null) => void;
   onConfigChange: (config: AppConfig) => void;
+  /** Acciones de arranque, a la derecha de Guardar. */
+  actions?: ReactNode;
 }) {
   const toast = useToast();
   const [loadOpen, setLoadOpen] = useState(false);
@@ -65,6 +68,11 @@ export default function ConfigBar({
           ? `${active.name} copia`
           : defaultName
         : defaultName;
+  const currentName = selectedModel
+    ? active
+      ? active.name
+      : t("Configuración actual")
+    : t("Sin configuración");
   const dirty =
     !!active &&
     (JSON.stringify(active.server) !== JSON.stringify(config.server) ||
@@ -205,32 +213,29 @@ export default function ConfigBar({
   );
 
   return (
-    <div className="config-group">
-      {deployments.length > 0 ? (
+    <div className="config-bar">
+      <div className="min-w-0 flex-1">
+        <p className="config-bar-meta">{t("Configuración")}</p>
+        {deployments.length > 0 ? (
+          <button
+            type="button"
+            className="config-bar-name"
+            onClick={() => setLoadOpen(true)}
+            title={t("Cambiar configuración…")}
+            aria-haspopup="dialog"
+          >
+            <span className="min-w-0 truncate">{currentName}</span>
+            <ChevronsUpDown size={14} aria-hidden />
+          </button>
+        ) : (
+          <span className="config-bar-name">
+            <span className="min-w-0 truncate">{currentName}</span>
+          </span>
+        )}
+      </div>
+      <div className="flex flex-none items-center gap-2">
+      <div className="config-group">
         <button
-          type="button"
-          className="config-group-name"
-          onClick={() => setLoadOpen(true)}
-          title={t("Cambiar configuración…")}
-          aria-haspopup="dialog"
-        >
-          {selectedModel
-            ? active
-              ? active.name
-              : t("Configuración actual")
-            : t("Sin configuración")}
-        </button>
-      ) : (
-        <span className="config-group-name">
-          {selectedModel
-            ? active
-              ? active.name
-              : t("Configuración actual")
-            : t("Sin configuración")}
-        </span>
-      )}
-      <span className="config-group-divider" aria-hidden />
-      <button
         type="button"
         className={clsx(
           "config-group-action",
@@ -240,7 +245,7 @@ export default function ConfigBar({
         disabled={presetBusy}
         title={dirty ? t("Cambios sin guardar") : t("Guardar")}
       >
-        <Save size={12} aria-hidden />
+        <Save size={13} aria-hidden />
         {t("Guardar")}
       </button>
       <span className="config-group-divider" aria-hidden />
@@ -253,23 +258,27 @@ export default function ConfigBar({
             aria-label={t("Más opciones de guardado")}
             title={t("Más opciones de guardado")}
           >
-            <ChevronDown size={12} aria-hidden />
+            <ChevronDown size={13} aria-hidden />
           </button>
         </DropdownMenuTrigger>
           <DropdownMenuContent
             align="end"
-            className="min-w-56 border border-base-700 bg-base-900 text-ink-200 shadow-float"
+            sideOffset={4}
+            className="config-menu"
           >
-            <DropdownMenuItem className="text-label" onSelect={() => setPromptMode("save-as")}>
-              <FilePlus size={12} />
+            <DropdownMenuItem className="config-menu-item" onSelect={() => setPromptMode("save-as")}>
+              <FilePlus size={13} />
               {t("Guardar como…")}
             </DropdownMenuItem>
-            <DropdownMenuItem className="text-label" onSelect={() => void pickImport()}>
-              <Upload size={12} />
+            <DropdownMenuItem className="config-menu-item" onSelect={() => void pickImport()}>
+              <Upload size={13} />
               {t("Importar archivo…")}
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
+      </div>
+      {actions}
+      </div>
 
         <Dialog open={loadOpen} onOpenChange={setLoadOpen}>
         <DialogContent

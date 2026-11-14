@@ -1,8 +1,9 @@
-//! Detección de hardware: GPU (VRAM real), CPU, RAM y aceleradores.
+//! Detección de hardware: GPU, CPU, RAM y aceleradores.
 //!
 //! Reglas que No se improvisan (medidas en este equipo):
-//!   - La VRAM TOTAL y LIBRE sale de `llama-server --list-devices`: es la
-//!     misma API que usa llama.cpp. `vulkaninfo` NO da la VRAM.
+//!   - `llama-server --list-devices` informa la capacidad/presupuesto que ve
+//!     el backend. No es una medida del uso global. La telemetría de Windows
+//!     usa gpu_memory (WDDM + DXGI), independientemente del runtime.
 //!   - El TIPO de GPU (dedicada/integrada) sale de `vulkaninfo --summary`
 //!     (DISCRETE_GPU / INTEGRATED_GPU). La integrada reporta "18 GB" de
 //!     memoria compartida y engaña si solo se mira el número.
@@ -113,6 +114,7 @@ pub fn parse_list_devices(out: &str) -> Vec<GpuDevice> {
 }
 
 /// Mapa nombre de GPU -> discrete/integrated, leído de `vulkaninfo --summary`.
+#[cfg(not(windows))]
 pub fn detect_device_kinds() -> Vec<(String, String)> {
     device_types_vulkan()
 }

@@ -292,7 +292,6 @@ export default function ModelsView({
           position="popper"
           align="start"
           sideOffset={0}
-          className="w-(--radix-select-trigger-width) min-w-0"
         >
           {SORTS.map((option) => (
             <SelectItem key={option.value} value={option.value} title={t(option.title)}>

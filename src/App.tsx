@@ -1,22 +1,24 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import clsx from "clsx";
 import {
+  Activity,
   Boxes,
   Cpu,
   ExternalLink,
-  Gauge,
-  Gpu,
   HardDrive,
+  MemoryStick,
   Play,
   Settings2,
 } from "lucide-react";
 import { open } from "@tauri-apps/plugin-dialog";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
+import { getVersion } from "@tauri-apps/api/app";
 
 import { api } from "./lib/api";
-import { ToastProvider, useToast } from "./components/ui";
+import { Button, ToastProvider, useToast } from "./components/ui";
 import { Sparkline } from "./components/Telemetry";
+import GpuMemoryPanel, { GpuAdapterSelect, pickGpu } from "./components/GpuMemoryPanel";
 import WindowControls from "./components/WindowControls";
 import { Logo } from "./components/Logo";
 import DownloadBar from "./components/DownloadBar";
@@ -25,7 +27,13 @@ import { basename, dirname, formatBytes } from "./lib/format";
 import { languageFrom, setLanguage, t, type Language } from "./lib/i18n";
 import { useDownloads } from "./lib/useDownloads";
 import { useTelemetry } from "./lib/useTelemetry";
-import type { AppConfig, HardwareReport, InstalledBuild, ServerStatus } from "./types";
+import type {
+  AppConfig,
+  DiskSpace,
+  HardwareReport,
+  InstalledBuild,
+  ServerStatus,
+} from "./types";
 
 import ReleasesView from "./views/ReleasesView";
 import DeployView from "./views/DeployView";
@@ -60,6 +68,9 @@ function Shell() {
   const [tab, setTab] = useState<WorkspaceTab>("run");
   const [visited, setVisited] = useState<WorkspaceTab[]>(["run"]);
   const [busy, setBusy] = useState(false);
+  const [gpuId, setGpuId] = useState<string>();
+  const [appVersion, setAppVersion] = useState<string | null>(null);
+  const [disk, setDisk] = useState<DiskSpace | null>(null);
   const tel = useTelemetry(true, 1);
   const downloads = useDownloads(modelsDir);
 
@@ -101,6 +112,32 @@ function Shell() {
       alive = false;
     };
   }, [toast]);
+
+  // Disco de la carpeta de modelos: lo mide Windows. Cambia despacio
+  // (descargas), así que basta con leerlo cada 20 s.
+  useEffect(() => {
+    if (!modelsDir) return;
+    let alive = true;
+    const load = () =>
+      api
+        .telemetryDisk(modelsDir)
+        .then((value) => alive && setDisk(value))
+        .catch(() => alive && setDisk(null));
+    void load();
+    const id = window.setInterval(load, 20000);
+    return () => {
+      alive = false;
+      window.clearInterval(id);
+    };
+  }, [modelsDir]);
+
+  // La versión sale del binario, no del código: siempre coincide con la
+  // build que el usuario tiene instalada.
+  useEffect(() => {
+    getVersion()
+      .then(setAppVersion)
+      .catch(() => setAppVersion(null));
+  }, []);
 
   useEffect(() => {
     const id = setInterval(() => {
@@ -196,7 +233,6 @@ function Shell() {
       }
       const current = configRef.current;
       if (pendingSave && current) await api.setConfig(current);
-      tel.resetSpeed();
       const st = await api.startServer(selectedModel, selectedMmproj, selectedDraft);
       setServer(st);
       const localHost =
@@ -232,7 +268,6 @@ function Shell() {
     setBusy(true);
     try {
       const st = await api.stopServer();
-      tel.resetSpeed();
       setServer(st);
       toast.push("Servidor detenido", "info");
       refreshHardware();
@@ -251,7 +286,6 @@ function Shell() {
     setBusy(true);
     try {
       await api.stopServer();
-      tel.resetSpeed();
       const st = await api.startServer(selectedModel, selectedMmproj, selectedDraft);
       setServer(st);
       toast.push(
@@ -461,6 +495,8 @@ function Shell() {
   );
 
   const snap = tel.snapshot;
+  const gpuMemory = snap?.gpuMemory ?? [];
+  const monitoredGpu = pickGpu(gpuMemory, gpuId);
   const cpuPct = snap?.cpu.percent ?? 0;
   const ramUsed = snap?.ram.usedBytes ?? 0;
   const ramTotal = snap?.ram.totalBytes ?? hardware?.ram.totalBytes ?? 0;
@@ -505,6 +541,18 @@ function Shell() {
     ? `http://${localServerHost}:${server.port}`
     : null;
   const serverApiUrl = serverBaseUrl ? `${serverBaseUrl}/v1` : null;
+  // Estado del servidor con palabra propia: el color nunca va solo.
+  const serverTone: "ok" | "warn" | "idle" = server?.running
+    ? server.health
+      ? "ok"
+      : "warn"
+    : "idle";
+  const serverStateLabel =
+    serverTone === "ok"
+      ? t("En marcha")
+      : serverTone === "warn"
+        ? t("Cargando")
+        : t("Detenido");
   const vramTotalMib = dedicatedGpu?.vramTotalMib ?? 0;
 
   const openChat = useCallback(async () => {
@@ -516,11 +564,18 @@ function Shell() {
     }
   }, [serverBaseUrl, toast]);
 
-  const vramUsedMib = dedicatedGpu
-    ? Math.max(0, dedicatedGpu.vramTotalMib - dedicatedGpu.vramFreeMib)
-    : 0;
   const ramRatio = ramTotal > 0 ? ramUsed / ramTotal : 0;
-  const vramRatio = vramTotalMib > 0 ? vramUsedMib / vramTotalMib : 0;
+  const diskRatio =
+    disk && disk.totalBytes > 0
+      ? Math.min(1, (disk.totalBytes - disk.freeBytes) / disk.totalBytes)
+      : 0;
+  const diskTone = !disk
+    ? undefined
+    : disk.freeBytes / disk.totalBytes < 0.05
+      ? "danger"
+      : disk.freeBytes / disk.totalBytes < 0.1
+        ? "warn"
+        : undefined;
   const cpuTone = cpuPct > 90 ? "danger" : cpuPct > 70 ? "warn" : undefined;
   const gpuPct = snap?.gpu?.percent ?? null;
   const gpuTone =
@@ -563,18 +618,67 @@ function Shell() {
           <h1 className="app-titlebar-name" data-tauri-drag-region>
             EzLLM
           </h1>
+          {appVersion && (
+            <span className="app-titlebar-version mono" data-tauri-drag-region>
+              v{appVersion}
+            </span>
+          )}
         </div>
 
-        {config && (
-          <ConfigBar
-            config={config}
-            selectedModel={selectedModel}
-            selectedMmproj={selectedMmproj}
-            selectedDraft={selectedDraft}
-            onSelect={onModelPicked}
-            onConfigChange={saveConfig}
-          />
-        )}
+        {/* Secciones de la app: arriba, a la altura de la marca. El lateral
+            queda solo para el estado del motor, el equipo y el servidor. */}
+        <nav
+          className="titlebar-nav"
+          role="tablist"
+          aria-orientation="horizontal"
+          aria-label="Espacio de trabajo"
+          onKeyDown={(event) => {
+            if (!["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
+            event.preventDefault();
+            const current = WORKSPACE_TABS.findIndex((item) => item.id === tab);
+            const nextIndex =
+              event.key === "Home"
+                ? 0
+                : event.key === "End"
+                  ? WORKSPACE_TABS.length - 1
+                  : (current +
+                      (["ArrowRight", "ArrowDown"].includes(event.key) ? 1 : -1) +
+                      WORKSPACE_TABS.length) %
+                    WORKSPACE_TABS.length;
+            const next = WORKSPACE_TABS[nextIndex];
+            setTab(next.id);
+            setVisited((current) =>
+              current.includes(next.id) ? current : [...current, next.id],
+            );
+            requestAnimationFrame(() =>
+              document.getElementById(`workspace-tab-${next.id}`)?.focus(),
+            );
+          }}
+        >
+          {WORKSPACE_TABS.map((item) => {
+            const Icon = item.icon;
+            return (
+              <button
+                key={item.id}
+                id={`workspace-tab-${item.id}`}
+                type="button"
+                role="tab"
+                aria-selected={tab === item.id}
+                aria-controls={`workspace-panel-${item.id}`}
+                tabIndex={tab === item.id ? 0 : -1}
+                onClick={() => showTab(item.id)}
+                title={`Ctrl+${WORKSPACE_TABS.indexOf(item) + 1}`}
+                className={clsx(
+                  "titlebar-nav-item",
+                  tab === item.id && "titlebar-nav-item-on",
+                )}
+              >
+                <Icon size={15} aria-hidden />
+                <span>{t(item.label)}</span>
+              </button>
+            );
+          })}
+        </nav>
 
         <div className="app-titlebar-grow" data-tauri-drag-region />
 
@@ -583,278 +687,231 @@ function Shell() {
 
       <div className="flex min-h-0 flex-1">
         {/* ==================================================================
-            Barra lateral: runtime, equipo y control del servidor.
+            Barra lateral: runtime, equipo y estado del servidor.
 
             El control del servidor vive AQUÍ y en ningún otro sitio. La barra
             reúne el estado que antes estaba repartido entre las tres vistas.
             ================================================================== */}
-        <aside className="app-sidebar flex w-[16.5rem] shrink-0 flex-col border-r border-base-800 bg-base-950">
-          <nav
-            className="sidebar-nav"
-            role="tablist"
-            aria-label="Espacio de trabajo"
-            onKeyDown={(event) => {
-              if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
-              event.preventDefault();
-              const current = WORKSPACE_TABS.findIndex((item) => item.id === tab);
-              const nextIndex =
-                event.key === "Home"
-                  ? 0
-                  : event.key === "End"
-                    ? WORKSPACE_TABS.length - 1
-                    : (current +
-                        (event.key === "ArrowRight" ? 1 : -1) +
-                        WORKSPACE_TABS.length) %
-                      WORKSPACE_TABS.length;
-              const next = WORKSPACE_TABS[nextIndex];
-              setTab(next.id);
-              setVisited((current) =>
-                current.includes(next.id) ? current : [...current, next.id],
-              );
-              requestAnimationFrame(() =>
-                document.getElementById(`workspace-tab-${next.id}`)?.focus(),
-              );
-            }}
-          >
-            {WORKSPACE_TABS.map((item) => {
-              const Icon = item.icon;
-              return (
-                <button
-                  key={item.id}
-                  id={`workspace-tab-${item.id}`}
-                  type="button"
-                  role="tab"
-                  aria-selected={tab === item.id}
-                  aria-controls={`workspace-panel-${item.id}`}
-                  tabIndex={tab === item.id ? 0 : -1}
-                  onClick={() => showTab(item.id)}
-                  className={clsx(
-                    "sidebar-nav-item",
-                    tab === item.id && "sidebar-nav-item-on",
-                  )}
-                >
-                  <Icon size={13} />
-                  {t(item.label)}
-                </button>
-              );
-            })}
-          </nav>
-          {/* --- Entorno: runtime, hardware y telemetría viva --- */}
-        <div className="app-sidebar-machine min-h-0 flex-1 overflow-y-auto">
-          <div className="p-3">
-            <div className="mb-2 flex items-center justify-between gap-2">
-              <span className="flex items-center gap-1.5 text-meta font-medium text-ink-300">
-                <HardDrive size={12} className="text-ink-500" />
-                llama.cpp
-              </span>
-              <span
-                className="mono truncate text-meta text-ink-200"
-                title={activeServerPath ?? installed[0]?.dir}
-              >
-                {activeBuild?.tag ?? installed[0]?.tag ?? (hardware?.llamaServer ? "Manual" : "Sin instalar")}
-              </span>
-            </div>
+        <aside className="app-sidebar flex w-[17.5rem] shrink-0 flex-col border-r border-base-800 bg-base-950">
+          {/* --- Entorno: runtime, hardware y telemetría viva ---
+              Los tres bloques del lateral comparten anatomía: una cabecera
+              (título y dato breve) y filas etiqueta → valor. */}
+          <div className="app-sidebar-machine min-h-0 flex-1 overflow-y-auto">
+            <section className="sidebar-block" aria-labelledby="sidebar-machine">
+              <header className="sidebar-head">
+                <h3 id="sidebar-machine">{t("Equipo")}</h3>
+              </header>
 
-            <div className="mt-2 flex items-baseline justify-between gap-2 text-meta">
-              <span className="text-ink-400">{t("Aceleración")}</span>
-              <span className="truncate text-ink-300">{acceleratorLabel}</span>
-            </div>
-
-            <div className="mt-1.5 flex items-baseline justify-between gap-2 text-meta">
-              <span className="text-ink-400">{t("SO")}</span>
-              <span className="truncate text-ink-300">
-                {hardware ? `${hardware.os} · ${hardware.arch}` : "—"}
-              </span>
-            </div>
-          </div>
-
-          <div className="border-t border-base-800 p-3">
-            <div className="mb-2 flex items-baseline justify-between gap-2">
-              <span className="text-meta font-medium text-ink-300">{t("Equipo")}</span>
-              <span className="text-meta text-ink-500">
-                {hardware ? `${hardware.cpu.logicalThreads} ${t("hilos")}` : "—"}
-              </span>
-            </div>
-
-            <div className="space-y-2.5">
-              <div>
-                <div className="flex items-baseline justify-between gap-2 text-meta">
-                  <span className="flex items-center gap-1.5 text-ink-400">
-                    <Cpu size={11} /> CPU
-                  </span>
-                  <span className="mono text-ink-200">
-                    {snap ? `${cpuPct.toFixed(0)}%` : "—"}
-                  </span>
-                </div>
-                <p
-                  className="mt-0.5 truncate text-meta text-ink-500"
-                  title={hardware?.cpu.model ?? undefined}
-                >
-                  {hardware?.cpu.model ?? "Procesador no detectado"}
-                </p>
-                <Sparkline
-                  samples={tel.cpuSeries.values()}
-                  height={20}
-                  tone={cpuTone}
-                  label={t("Uso de CPU")}
-                  className="mt-1"
-                />
-              </div>
-
-              <div>
-                <div className="flex items-baseline justify-between gap-2 text-meta">
-                  <span className="flex items-baseline gap-1.5 text-ink-400">
-                    RAM
-                    {ramSpeed !== null && (
-                      <span className="text-ink-500">· {ramSpeed} MHz</span>
-                    )}
-                  </span>
-                  <span className="mono text-ink-300">
-                    {ramTotal > 0
-                      ? `${formatBytes(ramUsed)} / ${formatBytes(ramTotal, 0)}`
-                      : "—"}
-                  </span>
-                </div>
-                <div
-                  className="sidebar-track mt-1"
-                  role="meter"
-                  aria-label="RAM en uso"
-                  aria-valuenow={Math.round(ramRatio * 100)}
-                  aria-valuemin={0}
-                  aria-valuemax={100}
-                >
-                  <span style={{ transform: `scaleX(${Math.min(1, ramRatio)})` }} />
-                </div>
-              </div>
-
-              {dedicatedGpu && (
-                <div>
-                  <div className="flex items-baseline justify-between gap-2">
-                    <p
-                      className="flex min-w-0 items-center gap-1.5 truncate text-meta text-ink-300"
-                      title={dedicatedGpu.name}
+              <div className="telemetry-stack">
+                <div className="sidebar-metric">
+                  <div className="sidebar-metric-head">
+                    <span className="sidebar-metric-label">
+                      <Activity aria-hidden /> GPU
+                    </span>
+                    <span
+                      className="sidebar-metric-value mono"
+                      title={t("Motor más activo")}
                     >
-                      <Gpu size={11} className="shrink-0 text-ink-500" />
-                      {dedicatedGpu.name}
-                    </p>
-                    <span className="mono shrink-0 text-meta text-ink-200">
                       {gpuPct !== null ? `${gpuPct.toFixed(0)}%` : "—"}
                     </span>
                   </div>
+                  {monitoredGpu ? (
+                    <GpuAdapterSelect
+                      devices={gpuMemory}
+                      value={monitoredGpu}
+                      onChange={setGpuId}
+                    />
+                  ) : (
+                    <p className="sidebar-metric-sub">{t("Motor más activo")}</p>
+                  )}
                   <Sparkline
                     samples={tel.gpuSeries.values()}
                     height={20}
                     tone={gpuTone}
                     label={t("Uso de GPU")}
-                    className="mt-1"
+                    className="sidebar-spark"
                   />
-                  {vramTotalMib > 0 && (
-                    <>
-                      <div className="mt-0.5 flex items-baseline justify-between gap-2 text-meta">
-                        <span className="text-ink-500">VRAM</span>
-                        <span className="mono text-ink-400">
-                          {formatBytes(vramUsedMib * 1024 * 1024, 0)} /{" "}
-                          {formatBytes(vramTotalMib * 1024 * 1024, 0)}
-                        </span>
-                      </div>
-                      <div
-                        className="sidebar-track mt-1"
-                        role="meter"
-                        aria-label="VRAM en uso"
-                        aria-valuenow={Math.round(vramRatio * 100)}
-                        aria-valuemin={0}
-                        aria-valuemax={100}
-                      >
-                        <span style={{ transform: `scaleX(${Math.min(1, vramRatio)})` }} />
-                      </div>
-                    </>
-                  )}
                 </div>
-              )}
 
-            </div>
-          </div>
-        </div>
+                <GpuMemoryPanel device={monitoredGpu} paused={tel.paused} />
 
-        {/* --- Control del servidor: único en toda la app --- */}
-        <div className="shrink-0 space-y-2.5 border-t border-base-800 p-3">
-          <div className="flex items-center justify-between gap-2">
-            <span className="app-sidebar-section text-meta font-medium text-ink-300">
-              {t("Servidor local")}
-            </span>
-            <span
-              className={clsx(
-                "pulse-dot",
-                server?.running
-                  ? server.health
-                    ? "pulse-dot-ok"
-                    : "pulse-dot-warn"
-                  : "pulse-dot-idle",
-              )}
-              aria-hidden
-            />
-          </div>
+                <div className="sidebar-metric">
+                  <div className="sidebar-metric-head">
+                    <span className="sidebar-metric-label">
+                      <Cpu aria-hidden /> CPU
+                    </span>
+                    <span className="sidebar-metric-value mono">
+                      {snap ? `${cpuPct.toFixed(0)}%` : "—"}
+                    </span>
+                  </div>
+                  {/* Los hilos son del procesador: van con su modelo, delante
+                      para que un nombre largo se recorte por el final. */}
+                  <p
+                    className="sidebar-metric-sub"
+                    title={hardware?.cpu.model ?? undefined}
+                  >
+                    {hardware
+                      ? `${hardware.cpu.logicalThreads} ${t("hilos")} · ${hardware.cpu.model}`
+                      : t("Procesador no detectado")}
+                  </p>
+                  <Sparkline
+                    samples={tel.cpuSeries.values()}
+                    height={20}
+                    tone={cpuTone}
+                    label={t("Uso de CPU")}
+                    className="sidebar-spark"
+                  />
+                </div>
 
-          <div className="app-sidebar-section rounded-control border border-base-800 bg-base-900/55 px-2.5 py-2">
-            <div className="flex items-center justify-between gap-2">
-              <span className="text-meta text-ink-500">{t("IP local")}</span>
-              <p className="mono min-w-0 flex-1 truncate text-right text-meta text-ink-200">
-                {server?.running
-                  ? `${localServerHost}:${server.port}`
-                  : t("Servidor detenido")}
-              </p>
-              {server?.running && (
-                <button
-                  onClick={() => void tel.measureSpeed()}
-                  className="btn-quiet shrink-0 cursor-pointer rounded-control p-1 text-ink-500 hover:text-ink-100"
-                  title="Medir velocidad"
-                  aria-label="Medir velocidad"
-                >
-                  <Gauge size={11} />
-                </button>
-              )}
-            </div>
-            {server?.running && serverApiUrl && (
-              <div className="mt-1.5 flex items-baseline justify-between gap-2">
-                <span className="text-meta text-ink-500">{t("API")}</span>
-                <span
-                  className="mono min-w-0 truncate text-right text-meta text-ink-300"
-                  title={serverApiUrl}
-                >
-                  {serverApiUrl}
-                </span>
+                <div className="sidebar-metric">
+                  <div className="sidebar-metric-head">
+                    <span className="sidebar-metric-label">
+                      <MemoryStick aria-hidden /> RAM
+                    </span>
+                    <span className="sidebar-metric-value mono">
+                      {ramTotal > 0 ? formatBytes(ramUsed) : "—"}
+                      {ramTotal > 0 && <small> / {formatBytes(ramTotal, 0)}</small>}
+                    </span>
+                  </div>
+                  {ramSpeed !== null && (
+                    <p className="sidebar-metric-sub">{ramSpeed} MHz</p>
+                  )}
+                  <div
+                    className="sidebar-track"
+                    data-tone={ramRatio >= 0.95 ? "danger" : ramRatio >= 0.85 ? "warn" : undefined}
+                    role="meter"
+                    aria-label={t("RAM en uso")}
+                    aria-valuenow={Math.round(ramRatio * 100)}
+                    aria-valuemin={0}
+                    aria-valuemax={100}
+                  >
+                    <span style={{ transform: `scaleX(${Math.min(1, ramRatio)})` }} />
+                  </div>
+                </div>
+
+                <div className="sidebar-metric">
+                  <div className="sidebar-metric-head">
+                    <span className="sidebar-metric-label">
+                      <HardDrive aria-hidden /> {t("Disco")}
+                    </span>
+                    <span className="sidebar-metric-value mono">
+                      {disk ? formatBytes(disk.totalBytes - disk.freeBytes, 0) : "—"}
+                      {disk && <small> / {formatBytes(disk.totalBytes, 0)}</small>}
+                    </span>
+                  </div>
+                  <p className="sidebar-metric-sub" title={modelsDir}>
+                    {disk
+                      ? `${formatBytes(disk.freeBytes, 0)} ${t("libres")} · ${disk.root}`
+                      : t("Sin lectura disponible")}
+                  </p>
+                  <div
+                    className="sidebar-track"
+                    data-tone={diskTone}
+                    role="meter"
+                    aria-label={t("Disco de los modelos en uso")}
+                    aria-valuenow={Math.round(diskRatio * 100)}
+                    aria-valuemin={0}
+                    aria-valuemax={100}
+                  >
+                    <span style={{ transform: `scaleX(${diskRatio})` }} />
+                  </div>
+                </div>
               </div>
-            )}
-            {server?.running && server.health && serverBaseUrl && (
-              <button
-                type="button"
-                onClick={() => void openChat()}
-                className="mt-1.5 flex w-full cursor-pointer items-center justify-center gap-1.5 rounded-control border border-accent-500/30 bg-accent-500/10 px-2 py-1.5 text-label font-medium text-accent-300 hover:bg-accent-500/20"
-                title="Abrir el chat web de llama-server"
-              >
-                <ExternalLink size={12} />
-                {t("Abrir chat")}
-              </button>
-            )}
-            <p
-              className="mt-1.5 truncate text-meta text-ink-500"
-              title={server?.models.join(", ") || undefined}
-            >
-              {server?.running
-                ? server.models.length > 0
-                  ? server.models.join(", ")
-                  : server.health
-                    ? t("Modelo desplegado")
-                    : t("Cargando el modelo…")
-                : idleLabel}
-            </p>
-            {server?.running && tel.speed && (
-              <p className="mono mt-1 text-meta text-ink-400">
-                {tel.speed.predictedPerSecond.toFixed(1)} tok/s
-              </p>
-            )}
+            </section>
+
+            <section className="sidebar-block" aria-labelledby="sidebar-runtime">
+              <header className="sidebar-head">
+                <h3 id="sidebar-runtime">{t("Motor")}</h3>
+              </header>
+              <dl className="sidebar-rows">
+                <div>
+                  <dt>llama.cpp</dt>
+                  <dd className="mono" title={activeServerPath ?? installed[0]?.dir}>
+                    {activeBuild?.tag ??
+                      installed[0]?.tag ??
+                      (hardware?.llamaServer ? "Manual" : t("Sin instalar"))}
+                  </dd>
+                </div>
+                <div>
+                  <dt>{t("Aceleración")}</dt>
+                  <dd>{acceleratorLabel}</dd>
+                </div>
+                <div>
+                  <dt>{t("SO")}</dt>
+                  <dd>{hardware ? `${hardware.os} · ${hardware.arch}` : "—"}</dd>
+                </div>
+              </dl>
+            </section>
           </div>
-        </div>
+
+          {/* --- Servidor: estado y punto de acceso. El arranque vive en
+              Ejecutar para que haya un solo control principal. --- */}
+          <section
+            className="sidebar-block sidebar-server shrink-0"
+            aria-labelledby="sidebar-server"
+          >
+            <header className="sidebar-head">
+              <h3 id="sidebar-server">{t("Servidor")}</h3>
+              <span
+                className="sidebar-status"
+                data-tone={serverTone}
+                role="status"
+              >
+                <span
+                  className={clsx("pulse-dot", `pulse-dot-${serverTone}`)}
+                  aria-hidden
+                />
+                <span className="sidebar-status-word">{serverStateLabel}</span>
+              </span>
+            </header>
+
+            {server?.running ? (
+              <>
+                <dl className="sidebar-rows">
+                  <div>
+                    <dt>{t("Dirección")}</dt>
+                    <dd className="mono">{`${localServerHost}:${server.port}`}</dd>
+                  </div>
+                  {serverApiUrl && (
+                    <div>
+                      <dt>API</dt>
+                      <dd className="mono" title={serverApiUrl}>
+                        {serverApiUrl}
+                      </dd>
+                    </div>
+                  )}
+                  <div>
+                    <dt>{t("Modelo")}</dt>
+                    <dd title={server.models.join(", ") || undefined}>
+                      {server.models.length > 0
+                        ? server.models.join(", ")
+                        : server.health
+                          ? t("Modelo desplegado")
+                          : t("Cargando el modelo…")}
+                    </dd>
+                  </div>
+                </dl>
+
+                {server.health && serverBaseUrl && (
+                  <div className="sidebar-server-actions">
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      icon={<ExternalLink size={13} />}
+                      onClick={() => void openChat()}
+                      title={t("Abrir el chat web de llama-server")}
+                      className="flex-1"
+                    >
+                      {t("Abrir chat")}
+                    </Button>
+                  </div>
+                )}
+              </>
+            ) : (
+              <p className="sidebar-idle">{idleLabel}</p>
+            )}
+          </section>
+
         </aside>
 
         {/* --- Contenido: tres espacios de trabajo, una sola barra --- */}
@@ -874,7 +931,7 @@ function Shell() {
                   className={
                     active
                       ? clsx(
-                          "app-content mx-auto max-w-[68rem] px-6 py-5 outline-none",
+                          "app-content mx-auto max-w-[68rem] px-6 pt-6 pb-6 outline-none",
                           item.id === "models"
                             ? "flex h-full min-h-0 flex-col"
                             : "space-y-5",
@@ -901,6 +958,21 @@ function Shell() {
                       vramTotalMib={vramTotalMib}
                       ramAvailableGb={hardware?.ram.availableGb ?? 0}
                       serverBusy={busy}
+                      header={
+                        config
+                          ? ({ actions }) => (
+                              <ConfigBar
+                                config={config}
+                                selectedModel={selectedModel}
+                                selectedMmproj={selectedMmproj}
+                                selectedDraft={selectedDraft}
+                                onSelect={onModelPicked}
+                                onConfigChange={saveConfig}
+                                actions={actions}
+                              />
+                            )
+                          : undefined
+                      }
                     />
                   )}
                   {mounted && item.id === "models" && (

@@ -1,16 +1,15 @@
 /** Sondeo de la telemetría del equipo.
  *
  * Todo lo que devuelve aquí está MEDIDO por el backend Rust (GetSystemTimes,
- * GlobalMemoryStatusEx, llama-server --list-devices, GetProcessMemoryInfo).
+ * GlobalMemoryStatusEx, Windows GPU Adapter Memory, GetProcessMemoryInfo).
  * No hay cifras inventadas ni estimaciones.
  *
- * Cadencia: 1 Hz para los medidores. La VRAM se refresca cada 3 s porque
- * leerla lanza `llama-server --list-devices`, que es un proceso nuevo.
+ * Cadencia: 1 Hz, sin procesos auxiliares en Windows ni sondeos solapados.
  */
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { api } from "./api";
-import type { SlotsState, SpeedResult, Telemetry } from "../types";
+import type { SlotsState, Telemetry } from "../types";
 
 /** Una muestra con su marca de tiempo, para las series temporales. */
 export interface Sample {
@@ -56,30 +55,22 @@ export interface TelemetryState {
   snapshot: Telemetry | null;
   /** Slots ocupados del servidor. */
   slots: SlotsState | null;
-  /** Velocidad medida en la última prueba. */
-  speed: SpeedResult | null;
   /** Series temporales para las sparklines. */
   cpuSeries: Ring;
   ramSeries: Ring;
   vramSeries: Ring;
   gpuSeries: Ring;
-  /** Mide la velocidad real contra el servidor (una completion de prueba). */
-  measureSpeed: () => Promise<void>;
-  /** Descarta la última medida: al parar o cambiar de servidor deja de ser válida. */
-  resetSpeed: () => void;
   /** Velocidad de refresco en Hz. */
   hz: number;
   /** Pausa el sondeo (p. ej. cuando la ventana no está visible). */
   paused: boolean;
 }
 
-const VRAM_REFRESH_MS = 3000;
 const MAX_SAMPLES = 90;
 
 export function useTelemetry(active: boolean, hz = 1): TelemetryState {
   const [snapshot, setSnapshot] = useState<Telemetry | null>(null);
   const [slots, setSlots] = useState<SlotsState | null>(null);
-  const [speed, setSpeed] = useState<SpeedResult | null>(null);
   const [paused, setPaused] = useState(false);
 
   // Las series viven en refs: no tienen que provocar un render al escribir.
@@ -88,24 +79,14 @@ export function useTelemetry(active: boolean, hz = 1): TelemetryState {
   const vramSeries = useRef(new Ring(MAX_SAMPLES)).current;
   const gpuSeries = useRef(new Ring(MAX_SAMPLES)).current;
 
-  // Última VRAM conocida, para no relanzar el proceso cada segundo.
-  const lastGpu = useRef<Telemetry["gpus"]>([]);
-  const lastGpuAt = useRef(0);
+  // No mezclar series de adaptadores distintos al cambiar el hardware.
+  const lastAdapterId = useRef<string | null>(null);
 
-  const measureSpeed = useCallback(async () => {
-    try {
-      const s = await api.telemetrySpeed();
-      setSpeed(s);
-    } catch {
-      // El servidor puede estar apagándose: se ignora.
-    }
-  }, []);
-
-  const resetSpeed = useCallback(() => setSpeed(null), []);
 
   useEffect(() => {
     if (!active) return;
     let alive = true;
+    let timer: ReturnType<typeof setTimeout> | undefined;
 
     const tick = async () => {
       if (!alive || paused) return;
@@ -114,58 +95,68 @@ export function useTelemetry(active: boolean, hz = 1): TelemetryState {
         if (!alive) return;
 
         const now = Date.now();
-        if (now - lastGpuAt.current >= VRAM_REFRESH_MS) {
-          lastGpu.current = snap.gpus;
-          lastGpuAt.current = now;
-        } else {
-          snap.gpus = lastGpu.current;
-        }
-
         setSnapshot(snap);
         cpuSeries.push(snap.cpu.percent, now);
-        ramSeries.push(snap.ram.usedBytes / snap.ram.totalBytes, now);
+        if (snap.ram.totalBytes > 0)
+          ramSeries.push(snap.ram.usedBytes / snap.ram.totalBytes, now);
         if (snap.gpu) gpuSeries.push(snap.gpu.percent, now);
-        const vramUsed = snap.gpus.reduce(
-          (acc, g) => acc + (g.vramTotalMib - g.vramFreeMib),
-          0,
-        );
-        const vramTotal = snap.gpus.reduce((acc, g) => acc + g.vramTotalMib, 0);
-        if (vramTotal > 0) vramSeries.push(vramUsed / vramTotal, now);
+        const adapter = [...(snap.gpuMemory ?? [])].sort(
+          (a, b) => b.dedicatedTotalBytes - a.dedicatedTotalBytes,
+        )[0];
+        if (lastAdapterId.current !== (adapter?.id ?? null)) {
+          vramSeries.clear();
+          lastAdapterId.current = adapter?.id ?? null;
+        }
+        if (
+          adapter?.dedicatedUsedBytes != null &&
+          adapter.dedicatedTotalBytes > 0
+        ) {
+          vramSeries.push(
+            adapter.dedicatedUsedBytes / adapter.dedicatedTotalBytes,
+            now,
+          );
+        }
       } catch {
-        // Un fallo puntual de sondeo no debe parar el bucle.
+        if (alive) setSnapshot(null);
+      } finally {
+        if (alive) timer = setTimeout(tick, 1000 / Math.max(0.25, hz));
       }
     };
 
-    const id = setInterval(tick, 1000 / Math.max(0.25, hz));
     void tick();
     return () => {
       alive = false;
-      clearInterval(id);
+      clearTimeout(timer);
     };
   }, [active, hz, paused, cpuSeries, ramSeries, vramSeries, gpuSeries]);
 
   // Los slots del servidor se consultan aparte: es una llamada HTTP.
   useEffect(() => {
-    if (!active) return;
+    if (!active || paused) return;
     let alive = true;
-    const load = () =>
-      api
-        .telemetrySlots()
-        .then((s) => alive && setSlots(s))
-        .catch(() => alive && setSlots(null));
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const load = async () => {
+      try {
+        const result = await api.telemetrySlots();
+        if (alive) setSlots(result);
+      } catch {
+        if (alive) setSlots(null);
+      } finally {
+        if (alive) timer = setTimeout(load, 2000);
+      }
+    };
     void load();
-    const id = setInterval(load, 2000);
     return () => {
       alive = false;
-      clearInterval(id);
+      clearTimeout(timer);
     };
-  }, [active]);
+  }, [active, paused]);
 
-  // Pausa el sondeo cuando la ventana pierde el foco: una app de escritorio
-  // no debería lanzar procesos en segundo plano sin que nadie la mire.
+  // Pausa al ocultarse; al volver, solicita una lectura nueva de inmediato.
   useEffect(() => {
     if (!active) return;
     const onVisibility = () => setPaused(document.hidden);
+    onVisibility();
     document.addEventListener("visibilitychange", onVisibility);
     return () => document.removeEventListener("visibilitychange", onVisibility);
   }, [active]);
@@ -173,9 +164,6 @@ export function useTelemetry(active: boolean, hz = 1): TelemetryState {
   return {
     snapshot,
     slots,
-    speed,
-    measureSpeed,
-    resetSpeed,
     cpuSeries,
     ramSeries,
     vramSeries,

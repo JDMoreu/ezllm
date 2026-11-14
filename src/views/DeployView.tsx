@@ -4,7 +4,7 @@ import { Check, Cpu, Download } from "lucide-react";
 
 import { api } from "../lib/api";
 import ArgumentLibrary from "../components/ArgumentLibrary";
-import ExecutionPanel, { type MemoryReading } from "../components/ExecutionPanel";
+import ExecutionPanel, { type ExecutionHeader, type MemoryReading } from "../components/ExecutionPanel";
 import { Button, Section } from "../components/ui";
 import { readArgs, upsertFlag, validateArgs } from "../lib/args";
 import { fitOf, percentOf, recommendedContext } from "../lib/fit";
@@ -39,6 +39,7 @@ export default function DeployView({
   vramTotalMib,
   ramAvailableGb,
   serverBusy,
+  header,
 }: {
   config: AppConfig | null;
   server: ServerStatus | null;
@@ -57,6 +58,8 @@ export default function DeployView({
   vramTotalMib: number;
   ramAvailableGb: number;
   serverBusy: boolean;
+  /** Cabecera de la tarjeta: la configuración activa y Guardar. */
+  header?: ExecutionHeader;
 }) {
   const [probe, setProbe] = useState<MemoryEstimate | null>(null);
   const [probeFor, setProbeFor] = useState<string | null>(null);
@@ -247,6 +250,7 @@ export default function DeployView({
         hasRuntime={hasRuntime}
         hasModel={hasModel}
         serverBusy={serverBusy}
+        header={header}
       />
 
       <ArgumentLibrary

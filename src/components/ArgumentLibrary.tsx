@@ -175,7 +175,7 @@ export default function ArgumentLibrary({
               </span>
             )}
           </div>
-          <p className="mt-0.5 text-label text-ink-500">
+          <p className="mt-0.5 text-label text-ink-400">
             {loading
               ? t("Leyendo el catálogo del runtime…")
               : help
@@ -231,13 +231,10 @@ export default function ArgumentLibrary({
                 {t(currentCategory?.label ?? "Sugeridos")}
               </span>
             </SelectTrigger>
-            {/* El panel mide exactamente lo que el disparador: la lista de
-                categorías es corta y un panel más ancho la estiraba. */}
             <SelectContent
               position="popper"
               align="start"
               sideOffset={0}
-              className="w-(--radix-select-trigger-width) min-w-0"
             >
               {categories.map((item) => (
                 <SelectItem key={item.category} value={item.category}>

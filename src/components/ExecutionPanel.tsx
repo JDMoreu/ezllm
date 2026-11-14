@@ -1,12 +1,12 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import clsx from "clsx";
 import {
   AlertTriangle,
+  Loader2,
   Check,
   Copy,
   Cpu,
   FolderOpen,
-  MemoryStick,
   Play,
   RefreshCw,
   Square,
@@ -19,7 +19,6 @@ import { commandLine, composeFlags } from "../lib/args";
 import type { FitTone } from "../lib/fit";
 import { dirname } from "../lib/format";
 import { t } from "../lib/i18n";
-import FitBadge from "./FitBadge";
 import ModelSlots from "./ModelSlots";
 import { Button, useToast } from "./ui";
 import type { AppConfig, ModelRole, ServerStatus } from "../types";
@@ -43,6 +42,10 @@ function cleanLog(text: string) {
     .replace(CONTROL_CHARS, "");
 }
 
+/** La cabecera la compone quien conoce la configuración; el panel le pasa
+    lo que es suyo: los controles de arranque. */
+export type ExecutionHeader = (slots: { actions: ReactNode }) => ReactNode;
+
 export default function ExecutionPanel({
   config,
   server,
@@ -62,6 +65,7 @@ export default function ExecutionPanel({
   hasRuntime,
   hasModel,
   serverBusy,
+  header,
 }: {
   config: AppConfig;
   server: ServerStatus | null;
@@ -81,6 +85,9 @@ export default function ExecutionPanel({
   hasRuntime: boolean;
   hasModel: boolean;
   serverBusy: boolean;
+  /** Cabecera de la tarjeta: la configuración activa y Guardar. Recibe
+      las acciones de arranque para colocarlas a la derecha. */
+  header?: ExecutionHeader;
 }) {
   const toast = useToast();
   const [copied, setCopied] = useState(false);
@@ -187,10 +194,97 @@ export default function ExecutionPanel({
   }, [log]);
 
 
+  const memoryMeta = memory ? (
+    <span className="execution-meta">
+      {t("Memoria estimada")}
+      <span className="mono text-ink-200">{memory.text}</span>
+    </span>
+  ) : null;
+  const runActions = (
+    <>
+          {server?.running ? (
+            // En marcha: Reiniciar y Detener forman un grupo con la misma
+            // anatomía que Guardar (borde de control, divisor, 32px), así la
+            // cabecera muestra dos grupos gemelos en lugar de tres formas.
+            <div
+              className="config-group"
+              role="group"
+              aria-label={t("Servidor en marcha")}
+            >
+              <button
+                type="button"
+                className="config-group-action"
+                onClick={onRestart}
+                disabled={serverBusy}
+                title={t("Detener y volver a arrancar con estos argumentos")}
+              >
+                <RefreshCw size={13} aria-hidden />
+                {t("Reiniciar")}
+              </button>
+              <span className="config-group-divider" aria-hidden />
+              <button
+                type="button"
+                className="config-group-action config-group-action-danger"
+                onClick={onStop}
+                disabled={serverBusy}
+                aria-busy={serverBusy || undefined}
+                aria-keyshortcuts="Control+Enter"
+              >
+                {serverBusy ? (
+                  <Loader2 size={13} className="animate-spin" aria-hidden />
+                ) : (
+                  <Square size={12} aria-hidden />
+                )}
+                {serverBusy ? t("Deteniendo…") : t("Detener")}
+              </button>
+            </div>
+          ) : !hasRuntime ? (
+            <Button
+              size="sm"
+              variant="primary"
+              icon={<Cpu size={13} />}
+              onClick={() => onNavigate("runtime")}
+            >
+              {t("Instalar el motor")}
+            </Button>
+          ) : !hasModel ? (
+            <Button
+              size="sm"
+              variant="primary"
+              icon={<FolderOpen size={13} />}
+              onClick={() => onNavigate("models")}
+            >
+              {t("Elegir un modelo")}
+            </Button>
+          ) : (
+            <Button
+              size="sm"
+              variant="primary"
+              loading={serverBusy}
+              icon={<Play size={13} />}
+              onClick={onStart}
+              aria-keyshortcuts="Control+Enter"
+            >
+              {serverBusy ? t("Iniciando…") : t("Iniciar modelo")}
+            </Button>
+          )}
+    </>
+  );
+
   return (
     <section
       className={clsx("execution-panel", starting && "execution-panel-deploying")}
     >
+      <header className="execution-header">
+        {header ? (
+          header({ actions: runActions })
+        ) : (
+          <div className="config-bar">
+            <div className="min-w-0 flex-1" />
+            <div className="flex flex-none items-center gap-2">{runActions}</div>
+          </div>
+        )}
+      </header>
       <ModelSlots
         primary={selectedModel}
         mmproj={selectedMmproj}
@@ -214,6 +308,7 @@ export default function ExecutionPanel({
           <Terminal size={12} aria-hidden />
           {t("Comando")}
         </span>
+        {memoryMeta}
       </div>
       <div
         className={clsx(
@@ -261,71 +356,6 @@ export default function ExecutionPanel({
           {t("Los cambios se aplican al reiniciar el servidor.")}
         </p>
       )}
-      <div className="execution-memory">
-        {memory && (
-          <span className="flex flex-wrap items-center gap-1.5 text-label text-ink-400">
-            <MemoryStick size={12} aria-hidden />
-            {t("Memoria")}
-            <span className="mono text-label text-ink-200">{memory.text}</span>
-            <FitBadge tone={memory.tone} where={memory.where} detail={memory.detail} />
-          </span>
-        )}
-        <div className="ml-auto flex flex-wrap items-center gap-2">
-          {server?.running && (
-            <Button
-              size="sm"
-              variant="quiet"
-              icon={<RefreshCw size={11} />}
-              onClick={onRestart}
-              disabled={serverBusy}
-              title="Detener y volver a arrancar con estos argumentos"
-            >
-              {t("Reiniciar")}
-            </Button>
-          )}
-          {server?.running ? (
-            <Button
-              size="sm"
-              variant="danger"
-              loading={serverBusy}
-              icon={<Square size={11} />}
-              onClick={onStop}
-              aria-keyshortcuts="Control+Enter"
-            >
-              {serverBusy ? t("Deteniendo…") : t("Detener")}
-            </Button>
-          ) : !hasRuntime ? (
-            <Button
-              size="sm"
-              variant="primary"
-              icon={<Cpu size={11} />}
-              onClick={() => onNavigate("runtime")}
-            >
-              {t("Instalar el motor")}
-            </Button>
-          ) : !hasModel ? (
-            <Button
-              size="sm"
-              variant="primary"
-              icon={<FolderOpen size={11} />}
-              onClick={() => onNavigate("models")}
-            >
-              {t("Elegir un modelo")}
-            </Button>
-          ) : (
-            <Button
-              size="sm"
-              variant="primary"
-              loading={serverBusy}
-              icon={<Play size={11} />}
-              onClick={onStart}
-              aria-keyshortcuts="Control+Enter"
-            >
-              {serverBusy ? t("Iniciando…") : t("Iniciar modelo")}
-            </Button>
-          )}
-        </div>
-      </div>
     </div>
 
     {showLog && (

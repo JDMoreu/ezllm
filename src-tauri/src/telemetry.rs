@@ -3,12 +3,9 @@
 //! Todo lo que se muestra aquí está MEDIDO, nunca estimado:
 //!   - CPU: `GetSystemTimes` (diferencia entre dos muestras).
 //!   - RAM: `GlobalMemoryStatusEx`.
-//!   - VRAM: `llama-server --list-devices`, que es la misma API que usa
-//!     llama.cpp para decidir dónde meter las capas.
+//!   - VRAM global: contadores WDDM por adaptador + capacidad DXGI.
 //!   - Proceso: `GetProcessMemoryInfo` + `GetProcessTimes` del `llama-server`
 //!     que la app tiene en marcha.
-//!   - Rendimiento: una completion real contra `/v1/chat/completions` de la que
-//!     se leen los `timings` que devuelve el propio servidor.
 //!
 //! La cadencia de sondeo la decide el frontend; aquí no hay ningun hilo
 //! que se quede mirando el reloj.
@@ -150,8 +147,10 @@ pub struct ProcessUsage {
 pub struct Telemetry {
     pub cpu: CpuUsage,
     pub ram: RamUsage,
-    /// VRAM por dispositivo. Vacía si no hay llama.cpp instalado.
+    /// Datos del backend en plataformas sin proveedor nativo. No son uso global.
     pub gpus: Vec<crate::hardware::GpuDevice>,
+    /// Memoria dedicada global por adaptador; independiente de llama.cpp.
+    pub gpu_memory: Vec<crate::gpu_memory::GpuMemory>,
     /// Uso del motor gráfico más ocupado. `None` si Windows no expone los
     /// contadores «GPU Engine» o si aún no hay dos muestras.
     pub gpu: Option<GpuLoad>,
@@ -341,6 +340,7 @@ fn process_usage(_pid: u32) -> Option<ProcessUsage> {
 ///
 /// El tipo (dedicada / integrada) se resuelve con `vulkaninfo`, que es caro.
 /// Se cachea: solo cambia cuando cambia el hardware, no en cada muestra.
+#[cfg(not(windows))]
 fn gpu_usage(llama_server: Option<&str>) -> Vec<crate::hardware::GpuDevice> {
     let Some(exe) = llama_server else {
         return Vec::new();
@@ -368,6 +368,7 @@ fn gpu_usage(llama_server: Option<&str>) -> Vec<crate::hardware::GpuDevice> {
 }
 
 /// Tipos de GPU cacheados (nombre -> discrete/integrated).
+#[cfg(not(windows))]
 fn device_kinds() -> Vec<(String, String)> {
     static KINDS: std::sync::OnceLock<Vec<(String, String)>> = std::sync::OnceLock::new();
     KINDS
@@ -384,12 +385,19 @@ fn device_kinds() -> Vec<(String, String)> {
 
 /// Toma una instantánea de la telemetría.
 pub fn snapshot(llama_server: Option<&str>, server_pid: Option<u32>) -> Telemetry {
+    // On Windows hardware discovery remains in hardware_report. Live readings
+    // must not launch llama-server (which reports process budgets on Vulkan).
+    #[cfg(windows)]
+    let gpus = { let _ = llama_server; Vec::new() };
+    #[cfg(not(windows))]
+    let gpus = gpu_usage(llama_server);
     Telemetry {
         cpu: CpuUsage {
             percent: cpu_percent(),
         },
         ram: ram_usage(),
-        gpus: gpu_usage(llama_server),
+        gpus,
+        gpu_memory: crate::gpu_memory::snapshot(),
         gpu: gpu_load(),
         process: server_pid.and_then(process_usage),
         timestamp_ms: now_ms(),
@@ -397,62 +405,6 @@ pub fn snapshot(llama_server: Option<&str>, server_pid: Option<u32>) -> Telemetr
 }
 
 // --- Rendimiento medido ------------------------------------------------------
-
-/// Resultado de una medición real de velocidad contra el servidor.
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct SpeedResult {
-    /// Tokens de contexto por segundo en el prompt.
-    pub prompt_per_second: f64,
-    /// Tokens generados por segundo.
-    pub predicted_per_second: f64,
-    /// Milisegundos hasta el primer token.
-    pub first_token_ms: f64,
-    pub prompt_tokens: u32,
-    pub predicted_tokens: u32,
-    pub total_ms: f64,
-}
-
-/// Mide la velocidad REAL del servidor con una completion mínima.
-///
-/// Los `timings` los devuelve el propio `llama-server`; no se estima nada.
-pub fn probe_speed(host: &str, port: u16) -> Result<SpeedResult, String> {
-    let url = format!("http://{host}:{port}/v1/chat/completions");
-    let body = serde_json::json!({
-        "messages": [{"role": "user", "content": "a"}],
-        "max_tokens": 16,
-        "stream": false,
-    });
-
-    let client = reqwest::blocking::Client::builder()
-        .timeout(Duration::from_secs(60))
-        .build()
-        .map_err(|e| format!("No se pudo crear el cliente HTTP: {e}"))?;
-
-    let started = std::time::Instant::now();
-    let resp = client
-        .post(&url)
-        .json(&body)
-        .send()
-        .map_err(|e| format!("No se pudo contactar con el servidor: {e}"))?;
-    let total_ms = started.elapsed().as_secs_f64() * 1000.0;
-
-    let json: serde_json::Value = resp
-        .json()
-        .map_err(|e| format!("El servidor devolvió una respuesta ilegible: {e}"))?;
-
-    let timings = json.get("timings").ok_or("El servidor no devolvió tiempos de generación")?;
-    let num = |key: &str| timings.get(key).and_then(|v| v.as_f64()).unwrap_or(0.0);
-
-    Ok(SpeedResult {
-        prompt_per_second: num("prompt_per_second"),
-        predicted_per_second: num("predicted_per_second"),
-        first_token_ms: num("predicted_ms"),
-        prompt_tokens: timings.get("prompt_n").and_then(|v| v.as_u64()).unwrap_or(0) as u32,
-        predicted_tokens: timings.get("predicted_n").and_then(|v| v.as_u64()).unwrap_or(0) as u32,
-        total_ms,
-    })
-}
 
 // --- Estado de los slots -----------------------------------------------------
 
@@ -491,6 +443,59 @@ pub fn slots_state(host: &str, port: u16) -> Option<SlotsState> {
     })
 }
 
+// --- Disco -------------------------------------------------------------------
+
+/// Espacio de la unidad que contiene una carpeta.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DiskSpace {
+    /// Raíz de la unidad, p. ej. `C:\`.
+    pub root: String,
+    pub total_bytes: u64,
+    pub free_bytes: u64,
+}
+
+/// Espacio libre y total de la unidad de `dir`, medido por Windows.
+#[cfg(windows)]
+pub fn disk_space(dir: &str) -> Option<DiskSpace> {
+    use std::os::windows::ffi::OsStrExt;
+    use windows_sys::Win32::Storage::FileSystem::GetDiskFreeSpaceExW;
+
+    // La carpeta puede no existir todavía: se sube hasta un ancestro real.
+    let mut path = std::path::PathBuf::from(dir);
+    while !path.exists() {
+        if !path.pop() {
+            return None;
+        }
+    }
+    let root = path
+        .ancestors()
+        .last()
+        .map(|p| p.to_string_lossy().to_string())
+        .unwrap_or_default();
+    let wide: Vec<u16> = path.as_os_str().encode_wide().chain(Some(0)).collect();
+    let mut free_to_caller = 0u64;
+    let mut total = 0u64;
+    let mut free_total = 0u64;
+    // SAFETY: punteros válidos a u64 y una cadena UTF-16 terminada en NUL.
+    let ok = unsafe {
+        GetDiskFreeSpaceExW(wide.as_ptr(), &mut free_to_caller, &mut total, &mut free_total)
+    };
+    if ok == 0 || total == 0 {
+        return None;
+    }
+    Some(DiskSpace {
+        root,
+        total_bytes: total,
+        free_bytes: free_to_caller,
+    })
+}
+
+#[cfg(not(windows))]
+pub fn disk_space(_dir: &str) -> Option<DiskSpace> {
+    None
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -505,6 +510,14 @@ mod tests {
     fn ram_usage_is_consistent() {
         let r = ram_usage();
         assert!(r.used_bytes <= r.total_bytes);
+    }
+
+    #[test]
+    fn disk_space_of_the_temp_dir() {
+        let tmp = std::env::temp_dir();
+        if let Some(d) = disk_space(&tmp.to_string_lossy()) {
+            assert!(d.free_bytes <= d.total_bytes);
+        }
     }
 
     #[test]

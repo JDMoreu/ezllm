@@ -9,6 +9,7 @@
 mod arghelp;
 mod config;
 mod gguf;
+mod gpu_memory;
 mod hardware;
 mod hf;
 mod install;
@@ -21,6 +22,7 @@ mod models;
 mod releases;
 mod server;
 mod telemetry;
+mod window_icon;
 
 // Los módulos se exponen para que los tests de integración puedan
 // comprobar la fórmula de memoria contra medidas reales.
@@ -870,15 +872,13 @@ async fn telemetry_slots(
     Ok(telemetry::slots_state(&host, port))
 }
 
-/// Velocidad real medida contra el servidor en marcha.
+/// Espacio de la unidad que contiene la carpeta de modelos.
 #[tauri::command]
-async fn telemetry_speed(state: State<'_, AppState>) -> CmdResult<telemetry::SpeedResult> {
-    let cfg = state.config.lock().await.clone();
-    let (host, port) = crate::server::current_endpoint();
-    if host.is_empty() {
-        return Err("No hay ningún servidor en marcha".to_string());
-    }
-    telemetry::probe_speed(&host, port)
+async fn telemetry_disk(dir: String) -> Option<telemetry::DiskSpace> {
+    tokio::task::spawn_blocking(move || telemetry::disk_space(&dir))
+        .await
+        .ok()
+        .flatten()
 }
 
 pub fn run() {
@@ -899,6 +899,13 @@ pub fn run() {
         .manage(AppState {
             config: Arc::new(tokio::sync::Mutex::new(config)),
             client,
+        })
+        .setup(|app| {
+            use tauri::Manager;
+            for window in app.webview_windows().values() {
+                window_icon::apply(window);
+            }
+            Ok(())
         })
         .invoke_handler(tauri::generate_handler![
             get_config,
@@ -936,7 +943,7 @@ pub fn run() {
             bootstrap,
             telemetry_snapshot,
             telemetry_slots,
-            telemetry_speed,
+            telemetry_disk,
             list_deployments,
             save_deployment,
             delete_deployment,

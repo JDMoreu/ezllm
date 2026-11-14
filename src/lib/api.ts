@@ -6,6 +6,7 @@ import type {
   ArgHelp,
   Bootstrap,
   CatalogView,
+  DiskSpace,
   DownloadProgress,
   HardwareReport,
   HfDownloadProgress,
@@ -21,7 +22,6 @@ import type {
   ServerStatus,
   StableRelease,
   Telemetry,
-  SpeedResult,
   SlotsState,
 } from "../types";
 
@@ -120,7 +120,7 @@ export const api = {
   // --- Telemetría ----------------------------------------------------------
   telemetrySnapshot: () => invoke<Telemetry>("telemetry_snapshot"),
   telemetrySlots: () => invoke<SlotsState | null>("telemetry_slots"),
-  telemetrySpeed: () => invoke<SpeedResult>("telemetry_speed"),
+  telemetryDisk: (dir: string) => invoke<DiskSpace | null>("telemetry_disk", { dir }),
 
   // --- Utilidades --------------------------------------------------------
   llamaServerPath: () => invoke<string | null>("llama_server_path"),
