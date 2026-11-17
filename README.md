@@ -6,6 +6,14 @@ EzLLM es un cliente de escritorio para [llama.cpp](https://github.com/ggml-org/l
 
 Estado: `0.1.0` · Windows x86_64 · Interfaz en español · Licencia MIT.
 
+## Descargar EzLLM
+
+**[Descargar EzLLM para Windows](https://github.com/JDMoreu/ezllm/releases)**
+
+1. Abre el enlace y busca la versión más reciente.
+2. En la sección **Assets**, descarga el archivo que termina en **`_x64-setup.exe`**. Si no ves los archivos, haz clic en **Assets** para desplegarlos.
+3. Abre el archivo descargado y sigue los pasos del instalador.
+
 ## Qué incluye
 
 - **Runtime**: instala, actualiza y selecciona builds de llama.cpp desde las releases oficiales de GitHub.
