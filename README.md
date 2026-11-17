@@ -4,6 +4,8 @@
 
 # EzLLM
 
+![EzLLM: IA local sin ser experto, con la interfaz de configuración del modelo](assets/ezllm-readme.png)
+
 EzLLM es un cliente de escritorio para [llama.cpp](https://github.com/ggml-org/llama.cpp). Instala los runtimes oficiales, descubre y descarga modelos GGUF, detecta el hardware real y arranca `llama-server` con una línea de comandos comprensible y reproducible.
 
 Estado: `0.1.0` · Windows x86_64 · Interfaz en español · Licencia MIT.
