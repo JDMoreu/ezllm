@@ -1,7 +1,3 @@
-<p align="center">
-  <img src="assets/icon.svg" width="96" height="96" alt="EzLLM" />
-</p>
-
 # EzLLM
 
 ![EzLLM: IA local sin ser experto, con la interfaz de configuración del modelo](assets/ezllm-readme.png)
